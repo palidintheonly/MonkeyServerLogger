@@ -129,23 +129,32 @@ app.get('/login', (req, res) => {
             font-family: Arial, sans-serif;
             margin: 0;
             padding: 20px;
-            background-color: #f5f5f5;
+            background-color: #36393f; /* Discord dark background */
             display: flex;
             justify-content: center;
             align-items: center;
             height: 100vh;
+            color: #dcddde; /* Discord text color */
           }
           .container {
             max-width: 500px;
-            background-color: white;
+            background-color: #2f3136; /* Discord darker background */
             padding: 30px;
             border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 15px rgba(0, 0, 0, 0.3);
             text-align: center;
+            border: 1px solid #202225; /* Discord border color */
           }
-          h1 { color: #5865F2; margin-bottom: 30px; }
+          h1 { 
+            color: #ffffff; 
+            margin-bottom: 30px; 
+          }
+          p {
+            color: #b9bbbe; /* Discord secondary text color */
+            margin-bottom: 25px;
+          }
           .login-button {
-            background-color: #5865F2;
+            background-color: #5865F2; /* Discord blurple */
             color: white;
             border: none;
             padding: 12px 24px;
@@ -157,7 +166,8 @@ app.get('/login', (req, res) => {
             transition: background-color 0.3s;
           }
           .login-button:hover {
-            background-color: #4752C4;
+            background-color: #4752C4; /* Darker blurple */
+            box-shadow: 0 0 10px rgba(88, 101, 242, 0.5);
           }
         </style>
       </head>
@@ -182,23 +192,26 @@ app.get('/unauthorized', (req, res) => {
             font-family: Arial, sans-serif;
             margin: 0;
             padding: 20px;
-            background-color: #f5f5f5;
+            background-color: #36393f; /* Discord dark background */
             display: flex;
             justify-content: center;
             align-items: center;
             height: 100vh;
+            color: #dcddde; /* Discord text color */
           }
           .container {
             max-width: 500px;
-            background-color: white;
+            background-color: #2f3136; /* Discord darker background */
             padding: 30px;
             border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 15px rgba(0, 0, 0, 0.3);
             text-align: center;
+            border: 1px solid #202225; /* Discord border color */
           }
           h1 { color: #ED4245; margin-bottom: 30px; }
+          p { color: #b9bbbe; margin-bottom: 25px; }
           .button {
-            background-color: #5865F2;
+            background-color: #5865F2; /* Discord blurple */
             color: white;
             border: none;
             padding: 12px 24px;
@@ -208,6 +221,11 @@ app.get('/unauthorized', (req, res) => {
             text-decoration: none;
             display: inline-block;
             margin-top: 20px;
+            transition: background-color 0.3s;
+          }
+          .button:hover {
+            background-color: #4752C4; /* Darker blurple */
+            box-shadow: 0 0 10px rgba(88, 101, 242, 0.5);
           }
         </style>
       </head>
@@ -243,23 +261,26 @@ app.get('/login-failed', (req, res) => {
             font-family: Arial, sans-serif;
             margin: 0;
             padding: 20px;
-            background-color: #f5f5f5;
+            background-color: #36393f; /* Discord dark background */
             display: flex;
             justify-content: center;
             align-items: center;
             height: 100vh;
+            color: #dcddde; /* Discord text color */
           }
           .container {
             max-width: 500px;
-            background-color: white;
+            background-color: #2f3136; /* Discord darker background */
             padding: 30px;
             border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 15px rgba(0, 0, 0, 0.3);
             text-align: center;
+            border: 1px solid #202225; /* Discord border color */
           }
           h1 { color: #ED4245; margin-bottom: 30px; }
+          p { color: #b9bbbe; margin-bottom: 25px; }
           .back-button {
-            background-color: #5865F2;
+            background-color: #5865F2; /* Discord blurple */
             color: white;
             border: none;
             padding: 12px 24px;
@@ -269,6 +290,11 @@ app.get('/login-failed', (req, res) => {
             text-decoration: none;
             display: inline-block;
             margin-top: 20px;
+            transition: background-color 0.3s;
+          }
+          .back-button:hover {
+            background-color: #4752C4; /* Darker blurple */
+            box-shadow: 0 0 10px rgba(88, 101, 242, 0.5);
           }
         </style>
       </head>
@@ -579,38 +605,56 @@ app.get('/public', (req, res) => {
             font-family: Arial, sans-serif;
             margin: 0;
             padding: 20px;
-            background-color: #f5f5f5;
+            background-color: #36393f; /* Discord dark background */
             display: flex;
             justify-content: center;
             align-items: center;
             min-height: 100vh;
+            color: #dcddde; /* Discord text color */
           }
           .container {
             max-width: 800px;
-            background-color: white;
-            padding: 20px;
+            background-color: #2f3136; /* Discord darker background */
+            padding: 25px;
             border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 15px rgba(0, 0, 0, 0.3);
+            border: 1px solid #202225; /* Discord border color */
           }
-          h1 { color: #5865F2; }
+          h1 { 
+            color: #ffffff; 
+            margin-bottom: 20px;
+          }
           .status { 
             padding: 10px; 
             border-radius: 5px; 
             margin: 10px 0;
           }
           .online { background-color: #57F287; color: white; }
-          .info { background-color: #5865F2; color: white; margin: 5px 0; padding: 15px; border-radius: 8px; }
+          .info { 
+            background-color: #5865F2; /* Discord blurple */
+            color: white; 
+            margin: 15px 0; 
+            padding: 15px; 
+            border-radius: 8px; 
+          }
           .login-link {
             display: inline-block;
             margin-top: 20px;
-            color: #5865F2;
+            color: #ffffff;
             text-decoration: none;
             padding: 10px 20px;
-            background-color: rgba(88, 101, 242, 0.1);
+            background-color: #5865F2; /* Discord blurple */
             border-radius: 4px;
+            transition: background-color 0.3s;
           }
           .login-link:hover {
-            background-color: rgba(88, 101, 242, 0.2);
+            background-color: #4752C4; /* Darker blurple */
+            box-shadow: 0 0 10px rgba(88, 101, 242, 0.5);
+          }
+          p {
+            color: #b9bbbe; /* Discord secondary text color */
+            margin-bottom: 15px;
+            line-height: 1.5;
           }
         </style>
       </head>
