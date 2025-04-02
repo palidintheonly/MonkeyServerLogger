@@ -17,14 +17,20 @@ const client = new Client({
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildVoiceStates,
-    GatewayIntentBits.GuildModeration
+    GatewayIntentBits.GuildModeration,
+    GatewayIntentBits.DirectMessages, // Required for DM modmail system
+    GatewayIntentBits.DirectMessageReactions,
+    GatewayIntentBits.DirectMessageTyping
   ],
   shards: isSharded ? 'auto' : undefined,
 });
 
 // Initialize collections
 client.commands = new Collection();
+client.contextCommands = new Collection();
 client.cooldowns = new Collection();
+client.activeModmailThreads = new Map();
+client.blockedModmailUsers = new Set();
 
 // Command registration
 async function registerCommands() {
@@ -63,6 +69,25 @@ async function registerCommands() {
         logger.info(`Loaded command from ${folder}: ${command.data.name}`);
       } else {
         logger.warn(`The command at ${filePath} is missing required "data" or "execute" property.`);
+      }
+    }
+  }
+  
+  // Load context menu commands
+  const contextPath = path.join(__dirname, 'commands', 'context');
+  if (fs.existsSync(contextPath)) {
+    const contextFiles = fs.readdirSync(contextPath).filter(file => file.endsWith('.js'));
+    
+    for (const file of contextFiles) {
+      const filePath = path.join(contextPath, file);
+      const command = require(filePath);
+      
+      if ('data' in command && 'execute' in command) {
+        commands.push(command.data.toJSON());
+        client.contextCommands.set(command.data.name, command);
+        logger.info(`Loaded context command: ${command.data.name}`);
+      } else {
+        logger.warn(`The context command at ${filePath} is missing required "data" or "execute" property.`);
       }
     }
   }

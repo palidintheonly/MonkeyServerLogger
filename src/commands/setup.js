@@ -41,6 +41,15 @@ module.exports = {
       .setRequired(false)
       .setMaxLength(100);
     
+    // Add input for modmail channel
+    const modmailChannelInput = new TextInputBuilder()
+      .setCustomId('modmailChannel')
+      .setLabel('Modmail channel name (optional)')
+      .setStyle(TextInputStyle.Short)
+      .setPlaceholder('modmail-tickets')
+      .setRequired(false)
+      .setMaxLength(100);
+    
     // Add a description field
     const descriptionInput = new TextInputBuilder()
       .setCustomId('description')
@@ -50,12 +59,23 @@ module.exports = {
       .setRequired(false)
       .setMaxLength(1000);
     
+    // Add toggle for enabling modmail
+    const modmailToggleInput = new TextInputBuilder()
+      .setCustomId('enableModmail')
+      .setLabel('Enable Modmail? (yes/no)')
+      .setStyle(TextInputStyle.Short)
+      .setPlaceholder('yes')
+      .setRequired(false)
+      .setMaxLength(3);
+    
     // Add the components to the modal
     const firstActionRow = new ActionRowBuilder().addComponents(channelNameInput);
-    const secondActionRow = new ActionRowBuilder().addComponents(descriptionInput);
+    const secondActionRow = new ActionRowBuilder().addComponents(modmailChannelInput);
+    const thirdActionRow = new ActionRowBuilder().addComponents(modmailToggleInput);
+    const fourthActionRow = new ActionRowBuilder().addComponents(descriptionInput);
     
     // Add inputs to the modal
-    modal.addComponents(firstActionRow, secondActionRow);
+    modal.addComponents(firstActionRow, secondActionRow, thirdActionRow, fourthActionRow);
     
     // Show the modal
     await interaction.showModal(modal);
@@ -73,11 +93,22 @@ module.exports = {
       // Get the input values
       const channelName = interaction.fields.getTextInputValue('channelName').trim() || config.logging.defaultChannelName;
       const description = interaction.fields.getTextInputValue('description').trim() || 'The Royal Court logging system powered by Monkey Bytes.';
+      const modmailChannelName = interaction.fields.getTextInputValue('modmailChannel').trim() || 'modmail-tickets';
+      
+      // Check if modmail should be enabled
+      let enableModmail = false;
+      try {
+        const modmailToggle = interaction.fields.getTextInputValue('enableModmail').trim().toLowerCase();
+        enableModmail = modmailToggle === 'yes' || modmailToggle === 'y';
+      } catch (error) {
+        // If field is missing or empty, default to false
+        enableModmail = false;
+      }
       
       // Find or create a guild record in the database
       const guildSettings = await models.Guild.findOrCreateGuild(interaction.guild.id);
       
-      // Create the channel if it doesn't exist
+      // Create the logging channel if it doesn't exist
       let loggingChannel;
       
       if (guildSettings.loggingChannelId) {
@@ -97,10 +128,84 @@ module.exports = {
         logger.info(`Created logging channel ${loggingChannel.name} in ${interaction.guild.name}`);
       }
       
+      // Set up modmail category and channel if enabled
+      let modmailChannel = null;
+      let modmailCategoryId = null;
+      
+      if (enableModmail) {
+        try {
+          // Create or find a modmail category
+          let modmailCategory = interaction.guild.channels.cache.find(
+            c => c.type === ChannelType.GuildCategory && c.name === 'MODMAIL TICKETS'
+          );
+          
+          if (!modmailCategory) {
+            modmailCategory = await interaction.guild.channels.create({
+              name: 'MODMAIL TICKETS',
+              type: ChannelType.GuildCategory,
+              permissionOverwrites: [
+                {
+                  id: interaction.guild.id, // @everyone role
+                  deny: [PermissionFlagsBits.ViewChannel]
+                },
+                {
+                  id: interaction.guild.roles.cache.find(r => r.name === 'Staff')?.id || interaction.guild.ownerId,
+                  allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory]
+                }
+              ]
+            });
+            
+            logger.info(`Created modmail category in ${interaction.guild.name}`);
+          }
+          
+          modmailCategoryId = modmailCategory.id;
+          
+          // Create a welcome/info channel for modmail in the category
+          modmailChannel = await interaction.guild.channels.create({
+            name: modmailChannelName,
+            type: ChannelType.GuildText,
+            parent: modmailCategory.id,
+            topic: 'Modmail system information and tickets'
+          });
+          
+          // Create welcome message for modmail channel
+          const modmailWelcomeEmbed = createEmbed({
+            title: '📬 Modmail System',
+            description: 'This channel is for the modmail system. Users who DM the bot will have their messages forwarded here. Staff can reply to these messages using the `/modmail` commands.',
+            fields: [
+              {
+                name: '📋 Available Commands',
+                value: '`/modmail reply` - Reply to a user via modmail\n`/modmail close` - Close a modmail thread\n`/modmail block` - Block a user from using modmail\n`/modmail unblock` - Unblock a user from modmail'
+              },
+              {
+                name: '⚠️ Important Notes',
+                value: '- When users DM the bot, a new channel will be created under this category\n- Only members with access to this category can view modmail conversations\n- Be professional in your responses as you represent the server'
+              }
+            ],
+            color: '#5865F2',
+            timestamp: true
+          });
+          
+          await modmailChannel.send({ embeds: [modmailWelcomeEmbed] });
+          logger.info(`Created modmail info channel ${modmailChannel.name} in ${interaction.guild.name}`);
+          
+          // Set environment variable for this server as support guild if requested
+          if (process.env.SUPPORT_GUILD_ID === undefined || process.env.SUPPORT_GUILD_ID === '') {
+            process.env.SUPPORT_GUILD_ID = interaction.guild.id;
+            logger.info(`Set ${interaction.guild.name} (${interaction.guild.id}) as SUPPORT_GUILD_ID for modmail system`);
+          }
+        } catch (error) {
+          logger.error(`Error setting up modmail: ${error.message}`);
+        }
+      }
+      
       // Update the guild settings
       await guildSettings.update({
         loggingChannelId: loggingChannel.id,
-        setupCompleted: true
+        setupCompleted: true,
+        modmailEnabled: enableModmail,
+        modmailCategoryId: modmailCategoryId,
+        modmailInfoChannelId: modmailChannel?.id
       });
       
       // Create the welcome embed for the logging channel
@@ -114,6 +219,14 @@ module.exports = {
           { name: '🛠️ Additional Setup', value: 'Use `/help` to see all available commands.' }
         ]
       });
+      
+      // Add modmail info to welcome embed if enabled
+      if (enableModmail) {
+        welcomeEmbed.addFields({
+          name: '📬 Modmail System',
+          value: `The modmail system has been enabled. Check ${modmailChannel} for details on how it works.`
+        });
+      }
       
       // Send the welcome message to the logging channel
       await loggingChannel.send({ embeds: [welcomeEmbed] });
@@ -153,9 +266,15 @@ module.exports = {
       
       const buttonRow = new ActionRowBuilder().addComponents(confirmButton);
       
+      // Create setup success message
+      let setupSuccessMessage = `Logging channel ${loggingChannel} has been set up!`;
+      if (enableModmail) {
+        setupSuccessMessage += `\nModmail system has been enabled in the ${modmailChannel} channel.`;
+      }
+      
       // Send the category selection message
       await interaction.editReply({
-        embeds: [createSuccessEmbed(`Logging channel ${loggingChannel} has been set up!`), categorySelectionEmbed],
+        embeds: [createSuccessEmbed(setupSuccessMessage), categorySelectionEmbed],
         components: [selectRow, buttonRow]
       });
       
@@ -229,9 +348,17 @@ module.exports = {
       // Get guild settings
       const guildSettings = await models.Guild.findOrCreateGuild(interaction.guild.id);
       
+      // Build success message
+      let successMessage = `Setup completed successfully! The logging system is now active.\n\nUse \`/logs\` to manage log channels for each category, \`/ignore\` to configure ignored channels/roles, and \`/help\` to see all available commands.`;
+      
+      // Add modmail info if enabled
+      if (guildSettings.modmailEnabled) {
+        successMessage += `\n\n📬 **Modmail System**\nThe modmail system is active. Users can send direct messages to the bot to contact staff. Staff can reply using \`/modmail reply\` in the modmail channels.`;
+      }
+      
       // Create final success embed
       const finalEmbed = createSuccessEmbed(
-        `Setup completed successfully! The logging system is now active.\n\nUse \`/logs\` to manage log channels for each category, \`/ignore\` to configure ignored channels/roles, and \`/help\` to see all available commands.`,
+        successMessage,
         '✅ Setup Complete'
       );
       
@@ -246,11 +373,37 @@ module.exports = {
         try {
           const loggingChannel = await interaction.guild.channels.fetch(guildSettings.loggingChannelId);
           
+          // Build the setup complete embed fields
+          const fields = [
+            {
+              name: '📝 Log Categories',
+              value: 'All enabled log categories will be reported in this channel unless configured otherwise with `/logs`.',
+              inline: false
+            }
+          ];
+          
+          // Add modmail field if enabled
+          if (guildSettings.modmailEnabled && guildSettings.modmailInfoChannelId) {
+            try {
+              const modmailChannel = await interaction.guild.channels.fetch(guildSettings.modmailInfoChannelId);
+              if (modmailChannel) {
+                fields.push({
+                  name: '📬 Modmail System',
+                  value: `The modmail system is active. Check ${modmailChannel} for more information.`,
+                  inline: false
+                });
+              }
+            } catch (error) {
+              logger.error(`Error fetching modmail channel: ${error.message}`);
+            }
+          }
+          
           const setupCompleteEmbed = createEmbed({
             title: `${config.bot.name} Logging System Active`,
-            description: `The logging system has been configured by ${interaction.user}.\n\nAll enabled log categories will now be reported in this channel unless configured otherwise with \`/logs\`.`,
+            description: `The logging system has been configured by ${interaction.user}.`,
             color: '#77B255',
-            timestamp: true
+            timestamp: true,
+            fields: fields
           });
           
           await loggingChannel.send({ embeds: [setupCompleteEmbed] });

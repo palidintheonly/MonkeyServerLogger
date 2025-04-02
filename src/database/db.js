@@ -45,8 +45,9 @@ async function connectToDatabase() {
       initModels();
       
       // Sync database (create tables if they don't exist)
-      await sequelize.sync();
-      logger.info('Database synchronized successfully');
+      // Use alter:true to add new columns to existing tables
+      await sequelize.sync({ alter: true });
+      logger.info('Database synchronized and altered successfully');
       
       return true;
     } catch (error) {

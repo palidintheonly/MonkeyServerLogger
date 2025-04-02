@@ -69,18 +69,79 @@ module.exports = {
       }
     }
     
+    // Handle context menu commands (user and message)
+    else if (interaction.isContextMenuCommand()) {
+      const command = client.contextCommands.get(interaction.commandName);
+      
+      if (!command) {
+        logger.warn(`Context command ${interaction.commandName} not found`);
+        return;
+      }
+      
+      try {
+        logger.info(`${interaction.user.tag} used context menu: ${interaction.commandName}`);
+        await command.execute(interaction, client);
+      } catch (error) {
+        logger.error(`Error executing context command ${interaction.commandName}:`, error);
+        
+        // Reply with error message
+        const errorMessage = 'There was an error while executing this context menu command!';
+        
+        if (interaction.replied || interaction.deferred) {
+          await interaction.followUp({
+            embeds: [createErrorEmbed(errorMessage)],
+            ephemeral: true
+          });
+        } else {
+          await interaction.reply({
+            embeds: [createErrorEmbed(errorMessage)],
+            ephemeral: true
+          });
+        }
+      }
+    }
+    
     // Handle modals
     else if (interaction.type === InteractionType.ModalSubmit) {
-      // Handle modal submissions (mainly for setup command)
+      // Handle different types of modals based on customId
       if (interaction.customId.startsWith('setup-modal')) {
+        // Setup command modal
         const setupCommand = client.commands.get('setup');
         if (setupCommand && setupCommand.handleModal) {
           try {
             await setupCommand.handleModal(interaction, client);
           } catch (error) {
-            logger.error(`Error handling modal submission ${interaction.customId}:`, error);
+            logger.error(`Error handling setup modal submission: ${error.message}`);
             await interaction.reply({
               embeds: [createErrorEmbed('There was an error processing your input!')],
+              ephemeral: true
+            });
+          }
+        }
+      } else if (interaction.customId.startsWith('report_message_')) {
+        // Message report modal from context menu
+        const reportCommand = client.contextCommands.get('Report Message');
+        if (reportCommand && reportCommand.handleModal) {
+          try {
+            await reportCommand.handleModal(interaction, client);
+          } catch (error) {
+            logger.error(`Error handling report modal submission: ${error.message}`);
+            await interaction.reply({
+              embeds: [createErrorEmbed('There was an error processing your report!')],
+              ephemeral: true
+            });
+          }
+        }
+      } else if (interaction.customId.startsWith('modmail_reply_')) {
+        // Modmail reply modal
+        const modmailCommand = client.commands.get('modmail');
+        if (modmailCommand && modmailCommand.handleModal) {
+          try {
+            await modmailCommand.handleModal(interaction, client);
+          } catch (error) {
+            logger.error(`Error handling modmail reply modal: ${error.message}`);
+            await interaction.reply({
+              embeds: [createErrorEmbed('There was an error sending your reply!')],
               ephemeral: true
             });
           }
@@ -89,7 +150,7 @@ module.exports = {
     }
     
     // Handle select menus
-    else if (interaction.isSelectMenu()) {
+    else if (interaction.isStringSelectMenu()) {
       // Extract command name from customId (format: command-name-action)
       const [commandName] = interaction.customId.split('-');
       

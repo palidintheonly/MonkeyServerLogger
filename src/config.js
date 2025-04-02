@@ -70,4 +70,13 @@ module.exports = {
     setup: 30,
     management: 5,
   },
+  
+  // Modmail configuration
+  modmail: {
+    defaultCategoryName: 'MODMAIL TICKETS',
+    defaultChannelName: 'modmail-tickets',
+    supportRoleName: 'Staff',
+    threadDeletionDelay: 10000, // 10 seconds
+    blockNotificationCooldown: 3600000, // 1 hour in milliseconds
+  },
 };

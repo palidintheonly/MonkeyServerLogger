@@ -108,6 +108,27 @@ module.exports = (sequelize) => {
       type: DataTypes.BOOLEAN,
       allowNull: false,
       defaultValue: false
+    },
+    
+    // Modmail enabled flag
+    modmailEnabled: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false
+    },
+    
+    // Modmail category ID
+    modmailCategoryId: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      defaultValue: null
+    },
+    
+    // Modmail info channel ID
+    modmailInfoChannelId: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      defaultValue: null
     }
   }, {
     // Additional model options
@@ -129,6 +150,14 @@ module.exports = (sequelize) => {
 
   Guild.prototype.getCategoryChannel = function(category) {
     return this.categoryChannels[category] || this.loggingChannelId;
+  };
+  
+  Guild.prototype.isModmailEnabled = function() {
+    return this.modmailEnabled === true;
+  };
+  
+  Guild.prototype.getModmailCategory = function() {
+    return this.modmailCategoryId;
   };
 
   // Static methods
