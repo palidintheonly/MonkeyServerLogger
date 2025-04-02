@@ -220,9 +220,17 @@ async function init() {
     
     // Simplified login process - no validation checks
     try {
+      // First, validate the token format
+      if (!token || typeof token !== 'string' || !token.includes('.')) {
+        logger.error('Invalid token format! Discord bot token should contain periods (.)');
+        console.error('CRITICAL ERROR: Invalid Discord token format');
+        console.error('Please make sure your DISCORD_BOT_TOKEN in Replit Secrets is valid');
+        process.exit(1);
+      }
+      
       logger.info('Attempting to login to Discord...');
       
-      // Skip all validation and directly attempt login
+      // Attempt to login with proper error handling
       await client.login(token);
       
       // Success path
@@ -243,14 +251,26 @@ async function init() {
           logger.info('Successfully registered all commands with Discord API');
         }
       } catch (error) {
-        logger.error(`Command registration error: ${error.message}`);
+        logger.warn(`Command registration error: ${error.message}`);
+        logger.warn('Bot will continue functioning without command registration');
         // Continue anyway - commands can be registered later
       }
     } catch (error) {
-      // Simple error handling
+      // Enhanced error handling with specific messages
       logger.error('Discord authentication failed. Error details:');
       logger.error(`Error message: ${error.message}`);
-      console.error('CRITICAL ERROR: Failed to connect to Discord');
+      
+      if (error.message.includes('invalid token')) {
+        console.error('CRITICAL ERROR: Discord rejected the token as invalid');
+        console.error('Please update your DISCORD_BOT_TOKEN in Replit Secrets');
+      } else if (error.message.includes('disallowed intent')) {
+        console.error('CRITICAL ERROR: Bot is missing required intents in Discord Developer Portal');
+        console.error('Please enable all Privileged Gateway Intents in the Discord Developer Portal');
+      } else {
+        console.error('CRITICAL ERROR: Failed to connect to Discord');
+        console.error(`Reason: ${error.message}`);
+      }
+      
       logger.error('Exiting due to authentication failure');
       process.exit(1);
     }

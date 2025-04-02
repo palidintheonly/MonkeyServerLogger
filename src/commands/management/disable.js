@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
+const { SlashCommandBuilder, PermissionsBitField  } = require('discord.js');
 const { createEmbed, createErrorEmbed, createSuccessEmbed } = require('../../utils/embedBuilder');
 const { logger } = require('../../utils/logger');
 const { models } = require('../../database/db');
@@ -9,7 +9,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('disable')
     .setDescription('Disable a specific logging category')
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+    .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
     .addStringOption(option =>
       option
         .setName('category')

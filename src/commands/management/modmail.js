@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, PermissionFlagsBits, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
+const { SlashCommandBuilder, PermissionsBitField, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder  } = require('discord.js');
 const { createEmbed, createSuccessEmbed, createErrorEmbed } = require('../../utils/embedBuilder');
 const { logger } = require('../../utils/logger');
 const { models } = require('../../database/db');
@@ -7,7 +7,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('modmail')
     .setDescription('Manage modmail threads')
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
+    .setDefaultMemberPermissions(PermissionsBitField.Flags.ManageMessages)
     .addSubcommand(subcommand => 
       subcommand
         .setName('reply')
@@ -70,8 +70,8 @@ module.exports = {
       // Special case for block/unblock commands which can be used outside of modmail channels
       if (interaction.options.getSubcommand() === 'block' || interaction.options.getSubcommand() === 'unblock') {
         // These commands require Administrator or Manager Server permissions
-        if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator) &&
-            !interaction.member.permissions.has(PermissionFlagsBits.ManageGuild)) {
+        if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator) &&
+            !interaction.member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
           await interaction.reply({
             embeds: [createErrorEmbed('You need Administrator or Manage Server permissions to use this command.', 'Modmail')],
             flags: { ephemeral: true }

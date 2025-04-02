@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, PermissionFlagsBits, ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } = require('discord.js');
+const { SlashCommandBuilder, PermissionsBitField, ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder  } = require('discord.js');
 const { createEmbed, createErrorEmbed, createSuccessEmbed } = require('../../utils/embedBuilder');
 const { logger } = require('../../utils/logger');
 const { models } = require('../../database/db');
@@ -9,7 +9,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('ignore')
     .setDescription('Configure channels and roles to ignore for logging')
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+    .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
     .addSubcommand(subcommand =>
       subcommand
         .setName('channel')

@@ -32,6 +32,7 @@ args = "node bot.js"
 [deployment]
 run = ["sh", "-c", "node bot.js"]
 deploymentTarget = "gce"
+ignorePorts = true
 
 [[ports]]
 localPort = 3000

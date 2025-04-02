@@ -225,13 +225,34 @@ module.exports = {
         const setupCommand = client.commands.get('setup');
         if (setupCommand && setupCommand.handleModal) {
           try {
+            // Save interaction ID for tracking
+            logger.info(`Processing modal from ${interaction.user.tag} with ID: ${interaction.id}`);
+            
+            // Check if the interaction has already been replied to
+            if (interaction.replied || interaction.deferred) {
+              logger.warn(`Modal interaction ${interaction.id} was already replied to or deferred`);
+            }
+            
             await setupCommand.handleModal(interaction, client);
           } catch (error) {
             logger.error(`Error handling setup modal submission: ${error.message}`);
-            await interaction.reply({
-              embeds: [createErrorEmbed('There was an error processing your input!')],
-              ephemeral: true
-            });
+            
+            // Safely respond to the interaction
+            try {
+              if (!interaction.replied && !interaction.deferred) {
+                await interaction.reply({
+                  embeds: [createErrorEmbed('There was an error processing your input!')],
+                  ephemeral: true
+                });
+              } else if (interaction.deferred) {
+                await interaction.followUp({
+                  embeds: [createErrorEmbed('There was an error processing your input!')],
+                  ephemeral: true
+                });
+              }
+            } catch (responseError) {
+              logger.error(`Failed to respond to modal error: ${responseError.message}`);
+            }
           }
         }
       } else if (interaction.customId.startsWith('report_message_')) {

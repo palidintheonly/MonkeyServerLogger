@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, PermissionFlagsBits, ChannelType, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { SlashCommandBuilder, PermissionsBitField, ChannelType, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle  } = require('discord.js');
 const { createEmbed, createErrorEmbed, createSuccessEmbed } = require('../../utils/embedBuilder');
 const { logger } = require('../../utils/logger');
 const { logger: enhancedLogger } = require('../../utils/enhanced-logger');
@@ -14,7 +14,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('logs')
     .setDescription('Configure log categories and channels')
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+    .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
     .addSubcommand(subcommand =>
       subcommand
         .setName('view')

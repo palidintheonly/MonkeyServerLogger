@@ -1,7 +1,7 @@
 // Common bot functions for use in both simple-bot.js and deployment.js
 const { SlashCommandBuilder, REST, Routes } = require('discord.js');
 const { logger } = require('./utils/logger');
-const { PermissionFlagsBits } = require('discord.js');
+const { PermissionsBitField } = require('discord.js');
 const { createEmbed, createSuccessEmbed, createErrorEmbed } = require('./utils/embedBuilder');
 
 // Define all slash commands based on the original command structure
@@ -35,12 +35,12 @@ const commands = [
   new SlashCommandBuilder()
     .setName('setup')
     .setDescription('Set up the logging system for your server')
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+    .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
     
   new SlashCommandBuilder()
     .setName('logs')
     .setDescription('Configure logging settings')
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .setDefaultMemberPermissions(PermissionsBitField.Flags.ManageGuild)
     .addSubcommand(subcommand => 
       subcommand
         .setName('view')
@@ -65,7 +65,7 @@ const commands = [
   new SlashCommandBuilder()
     .setName('categories')
     .setDescription('Manage log categories')
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .setDefaultMemberPermissions(PermissionsBitField.Flags.ManageGuild)
     .addSubcommand(subcommand => 
       subcommand
         .setName('list')
@@ -90,7 +90,7 @@ const commands = [
   new SlashCommandBuilder()
     .setName('ignore')
     .setDescription('Configure channels, roles, or users to ignore for logging')
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .setDefaultMemberPermissions(PermissionsBitField.Flags.ManageGuild)
     .addSubcommand(subcommand => 
       subcommand
         .setName('channel')
@@ -115,17 +115,17 @@ const commands = [
   new SlashCommandBuilder()
     .setName('enable')
     .setDescription('Enable the bot in this server')
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+    .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
     
   new SlashCommandBuilder()
     .setName('disable')
     .setDescription('Disable the bot in this server')
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+    .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
     
   new SlashCommandBuilder()
     .setName('modmail')
     .setDescription('Manage the modmail system')
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .setDefaultMemberPermissions(PermissionsBitField.Flags.ManageGuild)
     .addSubcommand(subcommand => 
       subcommand
         .setName('reply')

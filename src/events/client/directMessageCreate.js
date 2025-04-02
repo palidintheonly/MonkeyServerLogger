@@ -1,7 +1,7 @@
 const { createEmbed, createLogEmbed } = require('../../utils/embedBuilder');
 const { logger } = require('../../utils/logger');
 const { models } = require('../../database/db');
-const { ChannelType, PermissionFlagsBits, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
+const { ChannelType, PermissionsBitField, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
 const { Op } = require('sequelize');
 
 module.exports = {
@@ -213,11 +213,11 @@ module.exports = {
             permissionOverwrites: [
               {
                 id: supportGuild.id, // @everyone role
-                deny: [PermissionFlagsBits.ViewChannel]
+                deny: [PermissionsBitField.Flags.ViewChannel]
               },
               {
                 id: supportGuild.roles.cache.find(r => r.name === 'Staff')?.id || supportGuild.ownerId,
-                allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory]
+                allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory]
               }
             ]
           });

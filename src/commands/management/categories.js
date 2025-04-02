@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, PermissionFlagsBits, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
+const { SlashCommandBuilder, PermissionsBitField, ActionRowBuilder, StringSelectMenuBuilder  } = require('discord.js');
 const { createEmbed, createErrorEmbed, createSuccessEmbed } = require('../../utils/embedBuilder');
 const { logger } = require('../../utils/logger');
 const { models } = require('../../database/db');
@@ -9,7 +9,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('categories')
     .setDescription('Manage all logging categories at once')
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+    .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
   
   async execute(interaction, client) {
     // Check if setup has been completed

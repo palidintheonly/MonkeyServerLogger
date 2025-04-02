@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, PermissionFlagsBits, ChannelType, SelectMenuBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { SlashCommandBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, PermissionsBitField, ChannelType, SelectMenuBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { createEmbed, createSuccessEmbed, createErrorEmbed } = require('../utils/embedBuilder');
 const { logger } = require('../utils/logger');
 const { models } = require('../database/db');
@@ -10,7 +10,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('setup')
     .setDescription('Set up the logging system for your server')
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+    .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
   
   /**
    * Execute the setup command
@@ -20,7 +20,7 @@ module.exports = {
   async execute(interaction, client) {
     // Check if user is guild owner or has admin permission
     if (interaction.user.id !== interaction.guild.ownerId && 
-        !interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+        !interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
       await interaction.reply({
         embeds: [createErrorEmbed('Only the server owner or administrators can use the setup command.')],
         flags: { ephemeral: true }
@@ -197,19 +197,41 @@ module.exports = {
 
   async handleModal(interaction, client) {
     try {
+      logger.info(`Processing setup modal for ${interaction.user.tag} (${interaction.user.id}) in ${interaction.guild.name}`);
+      
       // Get any existing loader from the interaction or create our own
       let loader;
       if (client.activeLoaders && client.activeLoaders.has(interaction.id)) {
         loader = client.activeLoaders.get(interaction.id);
+        logger.info(`Using existing loader for interaction ${interaction.id}`);
       } else {
         // Create a unique setup loader
-        await interaction.deferReply();
-        loader = new LoadingIndicator({
-          text: "Setting up your logging system...",
-          style: "gear",
-          color: "purple"
-        });
-        await loader.start(interaction);
+        try {
+          // Check if the interaction is still valid
+          if (interaction.replied) {
+            logger.warn(`Setup modal interaction ${interaction.id} was already replied to`);
+            return;
+          }
+          
+          // Safely defer the reply
+          await interaction.deferReply({ ephemeral: true }).catch(err => {
+            logger.error(`Failed to defer reply for setup modal: ${err.message}`);
+            throw new Error('Invalid interaction: Unable to defer reply');
+          });
+          
+          logger.info(`Creating new loader for interaction ${interaction.id}`);
+          loader = new LoadingIndicator({
+            text: "Setting up your logging system...",
+            style: "gear",
+            color: "purple"
+          });
+          
+          await loader.start(interaction);
+        } catch (error) {
+          logger.error(`Error starting loader: ${error.message}`);
+          // Continue without a loader if we can't create one
+          logger.warn('Continuing setup process without loading animation');
+        }
       }
       
       // Get the input values
@@ -287,11 +309,11 @@ module.exports = {
               permissionOverwrites: [
                 {
                   id: interaction.guild.id, // @everyone role
-                  deny: [PermissionFlagsBits.ViewChannel]
+                  deny: [PermissionsBitField.Flags.ViewChannel]
                 },
                 {
                   id: interaction.guild.roles.cache.find(r => r.name === 'Staff')?.id || interaction.guild.ownerId,
-                  allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory]
+                  allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory]
                 }
               ]
             });
@@ -494,25 +516,44 @@ module.exports = {
       }
       
     } catch (error) {
-      logger.error(`Error in setup modal handler: ${error.message}`);
+      logger.error(`Error in setup modal handler: ${error.stack || error.message}`);
       
-      // If we have a loader, stop it with error state
-      if (loader) {
-        await loader.stop({
-          text: `An error occurred during setup: ${error.message}`,
-          success: false
-        });
-      } else {
-        // Fallback if loader wasn't available
-        await interaction.editReply({
-          embeds: [createErrorEmbed(`An error occurred during setup: ${error.message}`)],
-          flags: { ephemeral: true }
-        });
-      }
-      
-      // Track this loader if client supports it
-      if (client.activeLoaders) {
-        client.activeLoaders.delete(interaction.id);
+      try {
+        // If we have a loader, stop it with error state
+        if (loader) {
+          await loader.stop({
+            text: `An error occurred during setup. Please try again.`,
+            success: false
+          }).catch(e => {
+            logger.error(`Failed to stop loader: ${e.message}`);
+          });
+        } else {
+          // Fallback if loader wasn't available
+          // Check if the interaction is still valid and handle accordingly
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({
+              embeds: [createErrorEmbed(`An error occurred during setup. Please try again.`)],
+              ephemeral: true
+            }).catch(e => {
+              logger.error(`Failed to reply to interaction: ${e.message}`);
+            });
+          } else if (interaction.deferred) {
+            await interaction.editReply({
+              embeds: [createErrorEmbed(`An error occurred during setup. Please try again.`)],
+              ephemeral: true
+            }).catch(e => {
+              logger.error(`Failed to edit reply: ${e.message}`);
+            });
+          }
+        }
+      } catch (responseError) {
+        logger.error(`Critical error in error handler: ${responseError.message}`);
+        console.error(`Failed to respond to user after setup error: ${responseError.message}`);
+      } finally {
+        // Always clean up the loader
+        if (client.activeLoaders && client.activeLoaders.has(interaction.id)) {
+          client.activeLoaders.delete(interaction.id);
+        }
       }
     }
   },
