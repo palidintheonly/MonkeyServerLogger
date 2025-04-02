@@ -133,7 +133,7 @@ module.exports = {
         }
       } else if (interaction.customId.startsWith('report_message_')) {
         // Message report modal from context menu
-        const reportCommand = client.contextCommands.get('ReportMessage');
+        const reportCommand = client.contextCommands.get('Report Message');
         if (reportCommand && reportCommand.handleModal) {
           try {
             await reportCommand.handleModal(interaction, client);
@@ -146,8 +146,8 @@ module.exports = {
           }
         } else {
           // Try to find in regular commands as fallback
-          logger.warn('ReportMessage not found in contextCommands, checking main commands...');
-          const fallbackReportCommand = client.commands.get('ReportMessage');
+          logger.warn('Report Message not found in contextCommands, checking main commands...');
+          const fallbackReportCommand = client.commands.get('Report Message');
           if (fallbackReportCommand && fallbackReportCommand.handleModal) {
             try {
               await fallbackReportCommand.handleModal(interaction, client);
@@ -159,7 +159,7 @@ module.exports = {
               });
             }
           } else {
-            logger.error('ReportMessage command not found in any command collection');
+            logger.error('Report Message command not found in any command collection');
           }
         }
       } else if (interaction.customId.startsWith('modmail_reply_')) {
