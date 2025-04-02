@@ -48,8 +48,34 @@ module.exports = {
         emoji: '🏰',
         enabled: true,
       },
+      MOD_ACTIONS: {
+        name: 'Moderator Actions',
+        description: 'Logs actions performed by moderators (bans, kicks, mutes)',
+        emoji: '🛡️',
+        enabled: true,
+      },
+      THREADS: {
+        name: 'Threads',
+        description: 'Logs thread creation, deletion, and updates',
+        emoji: '🧵',
+        enabled: true,
+      },
     },
     defaultChannelName: 'monkey-logs',
+    defaultVerboseChannelName: 'monkey-logs-verbose',
+    defaultCategories: [
+      'MESSAGES', 
+      'MEMBERS', 
+      'ROLES', 
+      'CHANNELS', 
+      'SERVER'
+    ],
+    // Channels that should be ignored by default (names)
+    defaultIgnoredChannels: [
+      'ignore-me', 
+      'no-logs', 
+      'bot-spam'
+    ],
   },
   
   // Embed configuration

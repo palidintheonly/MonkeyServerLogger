@@ -440,7 +440,37 @@ module.exports = {
     
     // Handle buttons
     else if (interaction.isButton()) {
-      // Extract command name from customId (format: command-action-id)
+      // Handle special button interactions first
+      if (interaction.customId.startsWith('setup-')) {
+        const setupCommand = client.commands.get('setup');
+        if (setupCommand && setupCommand.handleButton) {
+          try {
+            await setupCommand.handleButton(interaction, client);
+            return;
+          } catch (error) {
+            logger.error(`Error handling setup button ${interaction.customId}:`, error);
+            // Try to respond with an error message if possible
+            try {
+              if (!interaction.replied && !interaction.deferred) {
+                await interaction.reply({
+                  embeds: [createErrorEmbed(`An error occurred: ${error.message}`)],
+                  ephemeral: true
+                });
+              } else {
+                await interaction.followUp({
+                  embeds: [createErrorEmbed(`An error occurred: ${error.message}`)],
+                  ephemeral: true
+                });
+              }
+            } catch (replyError) {
+              logger.error(`Failed to send error reply for setup button: ${replyError.message}`);
+            }
+            return;
+          }
+        }
+      }
+      
+      // Handle other button interactions (format: command-action-id)
       const [commandName] = interaction.customId.split('-');
       
       const command = client.commands.get(commandName);

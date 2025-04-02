@@ -80,9 +80,9 @@ module.exports = (sequelize) => {
       allowNull: false,
       defaultValue: () => {
         const defaultCategories = {};
-        // Set all categories to enabled by default
+        // Only enable the default categories from config
         Object.keys(config.logging.categories).forEach(category => {
-          defaultCategories[category] = config.logging.categories[category].enabled;
+          defaultCategories[category] = config.logging.defaultCategories.includes(category);
         });
         return JSON.stringify(defaultCategories);
       },
@@ -90,10 +90,10 @@ module.exports = (sequelize) => {
         try {
           return JSON.parse(this.getDataValue('enabledCategories'));
         } catch {
-          // If invalid JSON, return all categories enabled
+          // If invalid JSON, return only default categories enabled
           const defaultCategories = {};
           Object.keys(config.logging.categories).forEach(category => {
-            defaultCategories[category] = true;
+            defaultCategories[category] = config.logging.defaultCategories.includes(category);
           });
           return defaultCategories;
         }
