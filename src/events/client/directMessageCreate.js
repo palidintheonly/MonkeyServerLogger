@@ -552,5 +552,4 @@ module.exports = {
   }
 };
 
-// Export the processModmail function for external access
-module.exports.processModmail = module.exports.processModmail;
+// No need to export processModmail since it's already included in the module.exports object
