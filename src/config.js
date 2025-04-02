@@ -5,7 +5,7 @@ module.exports = {
     slogan: 'The Royal Court',
     defaultPrefix: '!',
     version: '1.0.0',
-    ownerId: process.env.OWNER_ID || '',
+    ownerId: process.env.BOT_OWNER_ID || '',
     color: '#FFD700', // Royal gold color
   },
   
