@@ -100,13 +100,13 @@ class LoadingIndicator {
       if (!interaction.deferred && !interaction.replied) {
         this.message = await interaction.reply({
           embeds: [this.createEmbed()],
-          ephemeral: this.ephemeral,
-          fetchReply: true,
+          flags: { ephemeral: this.ephemeral },
+          withResponse: true,
         });
       } else {
         this.message = await interaction.editReply({
           embeds: [this.createEmbed()],
-          fetchReply: true,
+          withResponse: true,
         });
       }
 

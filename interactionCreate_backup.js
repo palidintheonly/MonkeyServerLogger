@@ -37,7 +37,7 @@ module.exports = {
           const timeLeft = (expirationTime - now) / 1000;
           await interaction.reply({
             embeds: [createErrorEmbed(`Please wait ${timeLeft.toFixed(1)} more second(s) before reusing the \`${command.data.name}\` command.`)],
-            flags: { flags: { ephemeral: true } }
+            flags: { ephemeral: true }
           });
           return;
         }
@@ -113,12 +113,12 @@ module.exports = {
         if (interaction.replied || interaction.deferred) {
           await interaction.followUp({
             embeds: [createErrorEmbed(errorMessage)],
-            flags: { ephemeral: true }
+            ephemeral: true
           });
         } else {
           await interaction.reply({
             embeds: [createErrorEmbed(errorMessage)],
-            flags: { ephemeral: true }
+            ephemeral: true
           });
         }
       }
@@ -206,12 +206,12 @@ module.exports = {
         if (interaction.replied || interaction.deferred) {
           await interaction.followUp({
             embeds: [createErrorEmbed(errorMessage)],
-            flags: { ephemeral: true }
+            ephemeral: true
           });
         } else {
           await interaction.reply({
             embeds: [createErrorEmbed(errorMessage)],
-            flags: { ephemeral: true }
+            ephemeral: true
           });
         }
       }
@@ -225,7 +225,7 @@ module.exports = {
         try {
           await interaction.reply({
             embeds: [createErrorEmbed('The setup process now uses direct slash command options. Please use the `/setup wizard` command with options instead of modal forms.')],
-            flags: { ephemeral: true }
+            ephemeral: true
           });
           logger.info(`User ${interaction.user.tag} attempted to use the old setup modal`);
         } catch (error) {
@@ -241,7 +241,7 @@ module.exports = {
             logger.error(`Error handling report modal submission: ${error.message}`);
             await interaction.reply({
               embeds: [createErrorEmbed('There was an error processing your report!')],
-              flags: { ephemeral: true }
+              ephemeral: true
             });
           }
         } else {
@@ -255,7 +255,7 @@ module.exports = {
               logger.error(`Error handling report modal submission from fallback: ${error.message}`);
               await interaction.reply({
                 embeds: [createErrorEmbed('There was an error processing your report!')],
-                flags: { ephemeral: true }
+                ephemeral: true
               });
             }
           } else {
@@ -272,7 +272,7 @@ module.exports = {
             logger.error(`Error handling modmail reply modal: ${error.message}`);
             await interaction.reply({
               embeds: [createErrorEmbed('There was an error sending your reply!')],
-              flags: { ephemeral: true }
+              ephemeral: true
             });
           }
         }
@@ -408,7 +408,7 @@ module.exports = {
           
           await interaction.reply({
             embeds: [createErrorEmbed('There was an error processing your selection!')],
-            flags: { ephemeral: true }
+            ephemeral: true
           });
         }
       }
@@ -430,12 +430,12 @@ module.exports = {
               if (!interaction.replied && !interaction.deferred) {
                 await interaction.reply({
                   embeds: [createErrorEmbed(`An error occurred: ${error.message}`)],
-                  flags: { ephemeral: true }
+                  ephemeral: true
                 });
               } else {
                 await interaction.followUp({
                   embeds: [createErrorEmbed(`An error occurred: ${error.message}`)],
-                  flags: { ephemeral: true }
+                  ephemeral: true
                 });
               }
             } catch (replyError) {
@@ -506,7 +506,7 @@ module.exports = {
           
           await interaction.reply({
             embeds: [createErrorEmbed('There was an error processing your button click!')],
-            flags: { ephemeral: true }
+            ephemeral: true
           });
         }
       }

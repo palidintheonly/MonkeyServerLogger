@@ -56,9 +56,16 @@ server.listen(3000, '0.0.0.0', () => {
 });
 
 // Command registration function
-async function registerCommands() {
+async function registerCommands(forceReload = false) {
   const commands = [];
   const commandNames = new Set();
+  
+  // Clear command collections if force reloading
+  if (forceReload) {
+    logger.info('Force reloading all commands - clearing command cache');
+    client.commands.clear();
+    client.contextCommands.clear();
+  }
   
   // Load main commands
   const foldersPath = path.join(__dirname, 'src', 'commands');
@@ -68,6 +75,13 @@ async function registerCommands() {
   const commandFiles = fs.readdirSync(foldersPath).filter(file => file.endsWith('.js'));
   for (const file of commandFiles) {
     const filePath = path.join(foldersPath, file);
+    
+    // Clear require cache for this file if force reloading
+    if (forceReload && require.cache[require.resolve(filePath)]) {
+      delete require.cache[require.resolve(filePath)];
+      logger.debug(`Cleared cache for command: ${file}`);
+    }
+    
     const command = require(filePath);
     
     if ('data' in command && 'execute' in command) {
@@ -90,6 +104,13 @@ async function registerCommands() {
     
     for (const file of commandFiles) {
       const filePath = path.join(commandsPath, file);
+      
+      // Clear require cache for this file if force reloading
+      if (forceReload && require.cache[require.resolve(filePath)]) {
+        delete require.cache[require.resolve(filePath)];
+        logger.debug(`Cleared cache for command: ${folder}/${file}`);
+      }
+      
       const command = require(filePath);
       
       if ('data' in command && 'execute' in command) {
@@ -111,6 +132,13 @@ async function registerCommands() {
     
     for (const file of contextFiles) {
       const filePath = path.join(contextPath, file);
+      
+      // Clear require cache for this file if force reloading
+      if (forceReload && require.cache[require.resolve(filePath)]) {
+        delete require.cache[require.resolve(filePath)];
+        logger.debug(`Cleared cache for context command: ${file}`);
+      }
+      
       const command = require(filePath);
       
       if ('data' in command && 'execute' in command) {
@@ -147,12 +175,33 @@ async function registerCommands() {
   try {
     logger.info(`Started refreshing ${commands.length} application commands`);
     
+    // Validate each command for common issues before sending to Discord API
+    for (const command of commands) {
+      if (command.options) {
+        for (const option of command.options) {
+          // Check for subcommand with setDefaultMemberPermissions
+          if (option.type === 1 && option.default_member_permissions) {
+            logger.warn(`Command '${command.name}' has subcommand '${option.name}' with permissions. This is not supported in Discord.js v14.`);
+            // Remove the invalid permission from the subcommand
+            delete option.default_member_permissions;
+          }
+        }
+      }
+    }
+    
     const data = await rest.put(
       Routes.applicationCommands(clientId),
       { body: commands }
     );
     
     logger.info(`Successfully reloaded ${data.length} application commands`);
+    console.log(`SUCCESS: Registered ${data.length} commands with Discord API`);
+    
+    // Log each registered command name for debugging
+    data.forEach(cmd => {
+      logger.debug(`Registered command: ${cmd.name}${cmd.options ? ' (with options)' : ''}`);
+    });
+    
     return true; // Return true to indicate success
   } catch (error) {
     // Log error but don't fail hard - allow bot to continue
@@ -244,16 +293,23 @@ async function init() {
         logger.info(`- ${guild.name} (${guild.id})`);
       });
       
-      // Register commands with Discord API
+      // Always register commands with Discord API on startup and force a reload
+      logger.info('Automatically registering commands with Discord API on startup (with cache clearing)...');
       try {
-        const commandsRegistered = await registerCommands();
+        // Use force parameter to clear cache and ensure we have the latest command code
+        const commandsRegistered = await registerCommands(true);
         if (commandsRegistered) {
           logger.info('Successfully registered all commands with Discord API');
+        } else {
+          logger.warn('Command registration returned false - this should not happen');
+          // Try again with more information
+          logger.info('Attempting command registration again...');
+          await registerCommands(true);
         }
       } catch (error) {
-        logger.warn(`Command registration error: ${error.message}`);
-        logger.warn('Bot will continue functioning without command registration');
-        // Continue anyway - commands can be registered later
+        logger.error(`Command registration error: ${error.message}`);
+        logger.warn('Bot will continue functioning, but commands may not be available');
+        // Continue anyway - at least the bot will be online
       }
     } catch (error) {
       // Enhanced error handling with specific messages
@@ -292,5 +348,56 @@ async function init() {
   }
 }
 
+// Reload commands periodically (useful during development)
+function setupCommandReloading() {
+  // Check environment variable for command auto-reloading
+  const autoReloadEnabled = process.env.AUTO_RELOAD_COMMANDS === 'true';
+  
+  if (autoReloadEnabled) {
+    logger.info('Command auto-reloading is enabled, will refresh commands every hour');
+    
+    // Reload commands every hour with force parameter to clear cache
+    setInterval(async () => {
+      logger.info('Automatic command reloading started (with cache clearing)...');
+      try {
+        await registerCommands(true); // Pass true to force reload and clear cache
+        logger.info('Automatic command reloading completed successfully');
+      } catch (error) {
+        logger.error(`Error during automatic command reloading: ${error.message}`);
+      }
+    }, 60 * 60 * 1000); // Every hour
+    
+    // Do an initial forced reload to make sure we have the latest changes
+    (async () => {
+      try {
+        logger.info('Performing initial forced command reload...');
+        await registerCommands(true);
+        logger.info('Initial forced command reload completed successfully');
+      } catch (error) {
+        logger.error(`Error during initial forced command reload: ${error.message}`);
+      }
+    })();
+  } else {
+    logger.info('Command auto-reloading is disabled. Commands will only be reloaded on startup.');
+  }
+}
+
+// Export the registerCommands function so it can be used by other files
+module.exports = {
+  registerCommands
+};
+
 // Start the bot
-init();
+(async () => {
+  try {
+    await init();
+    logger.info('Bot initialization completed successfully');
+    
+    // Set up periodic command reloading after bot is initialized
+    setupCommandReloading();
+    logger.info('Command auto-reload configuration completed');
+  } catch (error) {
+    logger.error(`Failed to initialize bot: ${error.message}`);
+    process.exit(1);
+  }
+})();

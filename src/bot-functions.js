@@ -255,7 +255,7 @@ async function handleInteraction(interaction, client) {
       switch (commandName) {
         case 'ping':
           logger.info(`Executing ping command for ${interaction.user.tag}`);
-          const sent = await interaction.reply({ content: 'Measuring ping...', fetchReply: true });
+          const sent = await interaction.reply({ content: 'Measuring ping...', withResponse: true });
           const pingTime = sent.createdTimestamp - interaction.createdTimestamp;
           await interaction.editReply(`Bot Latency: ${pingTime}ms | API Latency: ${Math.round(client.ws.ping)}ms`);
           logger.info(`Ping command completed: ${pingTime}ms latency`);

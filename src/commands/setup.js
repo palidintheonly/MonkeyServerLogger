@@ -1,8 +1,5 @@
 const { 
-  SlashCommandBuilder, 
-  ModalBuilder, 
-  TextInputBuilder, 
-  TextInputStyle, 
+  SlashCommandBuilder,
   ActionRowBuilder, 
   PermissionsBitField, 
   ChannelType, 
@@ -26,6 +23,26 @@ module.exports = {
       subcommand
         .setName('wizard')
         .setDescription('Start the setup wizard with a guided interface')
+        .addStringOption(option => 
+          option.setName('channel_name')
+            .setDescription('Name for the main logging channel')
+            .setRequired(false)
+        )
+        .addStringOption(option => 
+          option.setName('modmail_channel')
+            .setDescription('Name for the modmail channel')
+            .setRequired(false)
+        )
+        .addBooleanOption(option =>
+          option.setName('enable_modmail')
+            .setDescription('Enable or disable the modmail system')
+            .setRequired(false)
+        )
+        .addBooleanOption(option =>
+          option.setName('enable_verbose_logging')
+            .setDescription('Enable or disable verbose logging')
+            .setRequired(false)
+        )
     )
     .addSubcommand(subcommand =>
       subcommand
@@ -120,136 +137,250 @@ module.exports = {
    * @param {Object} guildSettings - Guild settings from database
    */
   async handleWizardSubcommand(interaction, client, guildSettings) {
-    const setupProgress = guildSettings.getSetupProgress();
-    
-    // If we have a setup in progress, ask if the user wants to resume
-    if (setupProgress.step > 0 && !guildSettings.setupCompleted) {
-      const lastUpdated = new Date(setupProgress.lastUpdated);
-      const timeAgo = this.getTimeAgo(lastUpdated);
+    try {
+      // Get options from the slash command
+      const channelName = interaction.options.getString('channel_name') || config.logging.defaultChannelName;
+      const modmailChannelName = interaction.options.getString('modmail_channel') || 'modmail-tickets';
+      const enableModmail = interaction.options.getBoolean('enable_modmail') ?? false;
+      const enableVerboseLogging = interaction.options.getBoolean('enable_verbose_logging') ?? false;
       
-      const resumeEmbed = createEmbed({
-        title: '⚙️ Setup In Progress',
-        description: `You have a setup that was started ${timeAgo}. Would you like to resume where you left off or start fresh?`,
-        color: '#FFA500', // Orange
+      // Create a loading indicator
+      const loader = new LoadingIndicator({
+        text: "Setting up your logging system...",
+        style: "gear",
+        color: "purple"
+      });
+      
+      await loader.start(interaction);
+      
+      // Store setup data
+      await guildSettings.updateSetupProgress(2, {
+        channelName: channelName,
+        description: 'The Royal Court logging system.',
+        modmailChannel: modmailChannelName,
+        enableModmail: enableModmail,
+        enableVerboseLogging: enableVerboseLogging
+      });
+      
+      await loader.updateText("Creating logging channel...");
+      
+      // Create the logging channel if it doesn't exist
+      let loggingChannel;
+      
+      if (guildSettings.loggingChannelId) {
+        // Try to use existing channel
+        loggingChannel = await interaction.guild.channels.fetch(guildSettings.loggingChannelId).catch(() => null);
+      }
+      
+      if (!loggingChannel) {
+        // Create a new channel
+        loggingChannel = await interaction.guild.channels.create({
+          name: channelName,
+          type: ChannelType.GuildText,
+          topic: `${config.bot.name} - ${config.bot.slogan} | Logging Channel`,
+          reason: 'Royal Court Logging System Setup'
+        });
+        
+        logger.info(`Created logging channel ${loggingChannel.name} in ${interaction.guild.name}`);
+      }
+      
+      // Store the logging channel ID
+      guildSettings.loggingChannelId = loggingChannel.id;
+      await guildSettings.save();
+      
+      // Set up verbose logging if enabled
+      let verboseLoggingChannel = null;
+      
+      if (enableVerboseLogging) {
+        await loader.updateText("Setting up verbose logging...");
+        
+        try {
+          // Create a verbose logging channel
+          const verboseChannelName = `${channelName}-verbose`;
+          verboseLoggingChannel = await interaction.guild.channels.create({
+            name: verboseChannelName,
+            type: ChannelType.GuildText,
+            topic: `${config.bot.name} - Verbose Logging Channel | All debug and detailed logs`,
+            reason: 'Royal Court Logging System Setup - Verbose Logging'
+          });
+          
+          guildSettings.verboseLoggingEnabled = true;
+          guildSettings.verboseLoggingChannelId = verboseLoggingChannel.id;
+          await guildSettings.save();
+          
+          logger.info(`Created verbose logging channel ${verboseLoggingChannel.name} in ${interaction.guild.name}`);
+          
+          // Welcome message for verbose logging channel
+          const verboseWelcomeEmbed = createEmbed({
+            title: '🔍 Verbose Logging Channel',
+            description: 'This channel contains detailed debug logs and additional information not included in the main logging channel.',
+            color: '#5865F2',
+            timestamp: true
+          });
+          
+          await verboseLoggingChannel.send({ embeds: [verboseWelcomeEmbed] });
+        } catch (error) {
+          logger.error(`Error setting up verbose logging: ${error.message}`);
+          // Don't fail the whole setup if just verbose logging fails
+        }
+      }
+      
+      // Set up modmail if enabled
+      if (enableModmail) {
+        await loader.updateText("Setting up modmail system...");
+        
+        try {
+          // Create or find a modmail category
+          let modmailCategory = interaction.guild.channels.cache.find(
+            c => c.type === ChannelType.GuildCategory && c.name === 'MODMAIL TICKETS'
+          );
+          
+          if (!modmailCategory) {
+            modmailCategory = await interaction.guild.channels.create({
+              name: 'MODMAIL TICKETS',
+              type: ChannelType.GuildCategory,
+              permissionOverwrites: [
+                {
+                  id: interaction.guild.id, // @everyone role
+                  deny: PermissionsBitField.Flags.ViewChannel
+                },
+                {
+                  id: interaction.guild.roles.cache.find(r => r.name === 'Staff')?.id || interaction.guild.ownerId,
+                  allow: PermissionsBitField.Flags.ViewChannel | PermissionsBitField.Flags.SendMessages | PermissionsBitField.Flags.ReadMessageHistory
+                }
+              ]
+            });
+            
+            logger.info(`Created modmail category in ${interaction.guild.name}`);
+          }
+          
+          // Update guild settings
+          guildSettings.modmailEnabled = true;
+          guildSettings.modmailCategoryId = modmailCategory.id;
+          
+          // Create a welcome/info channel for modmail in the category
+          const modmailChannel = await interaction.guild.channels.create({
+            name: modmailChannelName,
+            type: ChannelType.GuildText,
+            parent: modmailCategory.id,
+            topic: 'Modmail system information and tickets'
+          });
+          
+          guildSettings.modmailInfoChannelId = modmailChannel.id;
+          await guildSettings.save();
+          
+          // Create welcome message for modmail channel
+          const modmailWelcomeEmbed = createEmbed({
+            title: '📬 Modmail System',
+            description: 'This channel is for the modmail system. Users who DM the bot will have their messages forwarded here. Staff can reply to these messages using the `/modmail` commands.',
+            fields: [
+              {
+                name: '📋 Available Commands',
+                value: '`/modmail reply` - Reply to a user via modmail\n`/modmail close` - Close a modmail thread\n`/modmail block` - Block a user from using modmail\n`/modmail unblock` - Unblock a user from modmail'
+              },
+              {
+                name: '⚠️ Important Notes',
+                value: '- When users DM the bot, a new channel will be created under this category\n- Only members with access to this category can view modmail conversations\n- Be professional in your responses as you represent the server'
+              }
+            ],
+            color: '#5865F2',
+            timestamp: true
+          });
+          
+          await modmailChannel.send({ embeds: [modmailWelcomeEmbed] });
+          logger.info(`Created modmail info channel ${modmailChannel.name} in ${interaction.guild.name}`);
+        } catch (error) {
+          logger.error(`Error setting up modmail: ${error.message}`);
+          // Don't fail the whole setup if just modmail fails
+        }
+      }
+      
+      // Mark setup as completed
+      guildSettings.setupCompleted = true;
+      await guildSettings.save();
+      
+      // Finalize setup
+      await loader.updateText("Finalizing setup...");
+      
+      // Construct the success message
+      let successMessage = `✅ **Setup completed successfully!**\n\nLogging channel: ${loggingChannel}`;
+      
+      if (verboseLoggingChannel) {
+        successMessage += `\nVerbose logging channel: ${verboseLoggingChannel}`;
+      }
+      
+      if (enableModmail) {
+        successMessage += `\nModmail system is **enabled**`;
+      }
+      
+      // Create completion embed with next steps
+      const setupCompleteEmbed = createSuccessEmbed(
+        successMessage,
+        '✅ Setup Complete'
+      );
+      
+      // Add an additional field with next steps
+      setupCompleteEmbed.addFields([
+        {
+          name: 'Next Steps',
+          value: '• Use `/help` to see all available commands\n• Configure specific logging channels with `/logs`\n• Manage ignored channels and roles with `/ignore`'
+        }
+      ]);
+      
+      // Create completion components
+      const helpButton = new ButtonBuilder()
+        .setCustomId('help-button')
+        .setLabel('View Help')
+        .setStyle(ButtonStyle.Primary);
+      
+      const setupCompleteComponents = new ActionRowBuilder().addComponents(helpButton);
+      
+      // Stop the loader with the final message
+      await loader.stop({
+        embeds: [setupCompleteEmbed],
+        components: [setupCompleteComponents],
+        success: true
+      });
+      
+      // Send a welcome message to the logging channel
+      const loggingWelcomeEmbed = createEmbed({
+        title: '📝 Logging System Activated',
+        description: `The Royal Court logging system has been configured by ${interaction.user}.`,
         fields: [
           {
-            name: 'Progress',
-            value: `You completed ${setupProgress.step} of 3 steps.`
+            name: '📋 Available Log Types',
+            value: 'All enabled log categories will be reported in this channel.'
           },
           {
-            name: 'Stored Information',
-            value: Object.keys(guildSettings.setupData).length 
-              ? `You've already provided: ${Object.keys(guildSettings.setupData).join(', ')}`
-              : 'No information stored yet.'
+            name: '⚙️ Configuration Options',
+            value: 'Use `/logs` to configure specific channels for different log types, and `/ignore` to exclude channels or roles from logging.'
           }
-        ]
+        ],
+        color: '#5865F2',
+        timestamp: true
       });
       
-      // Create buttons for resume or restart
-      const resumeButton = new ButtonBuilder()
-        .setCustomId('setup-resume')
-        .setLabel('Resume Setup')
-        .setStyle(ButtonStyle.Success);
+      await loggingChannel.send({ embeds: [loggingWelcomeEmbed] });
+    } catch (error) {
+      logger.error(`Error in setup wizard: ${error.message}`);
       
-      const restartButton = new ButtonBuilder()
-        .setCustomId('setup-restart')
-        .setLabel('Start Fresh')
-        .setStyle(ButtonStyle.Danger);
-      
-      const buttonRow = new ActionRowBuilder().addComponents(resumeButton, restartButton);
-      
-      await interaction.reply({
-        embeds: [resumeEmbed],
-        components: [buttonRow],
-        ephemeral: true
-      });
-      
-      return;
+      // Try to reply if we haven't already
+      try {
+        if (!interaction.replied && !interaction.deferred) {
+          await interaction.reply({
+            embeds: [createErrorEmbed(`An error occurred during setup: ${error.message}`)],
+            ephemeral: true
+          });
+        } else {
+          await interaction.followUp({
+            embeds: [createErrorEmbed(`An error occurred during setup: ${error.message}`)],
+            ephemeral: true
+          });
+        }
+      } catch (replyError) {
+        logger.error(`Failed to send error response for wizard: ${replyError.message}`);
+      }
     }
-    
-    // Either no setup in progress or user chose to start fresh
-    // Create a modal for initial setup
-    const modal = new ModalBuilder()
-      .setCustomId('setup-modal')
-      .setTitle('Royal Court Logging Setup');
-    
-    // Add text input for the main logging channel
-    const channelNameInput = new TextInputBuilder()
-      .setCustomId('channelName')
-      .setLabel('Main logging channel name')
-      .setStyle(TextInputStyle.Short)
-      .setPlaceholder(config.logging.defaultChannelName)
-      .setRequired(false)
-      .setMaxLength(100);
-    
-    // Add input for modmail channel
-    const modmailChannelInput = new TextInputBuilder()
-      .setCustomId('modmailChannel')
-      .setLabel('Modmail channel name (optional)')
-      .setStyle(TextInputStyle.Short)
-      .setPlaceholder('modmail-tickets')
-      .setRequired(false)
-      .setMaxLength(100);
-    
-    // Add a description field
-    const descriptionInput = new TextInputBuilder()
-      .setCustomId('description')
-      .setLabel('Logging system description (optional)')
-      .setStyle(TextInputStyle.Paragraph)
-      .setPlaceholder('Add a custom description for your logging system...')
-      .setRequired(false)
-      .setMaxLength(1000);
-    
-    // Add toggle for enabling modmail
-    const modmailToggleInput = new TextInputBuilder()
-      .setCustomId('enableModmail')
-      .setLabel('Enable Modmail? (yes/no)')
-      .setStyle(TextInputStyle.Short)
-      .setPlaceholder('yes')
-      .setRequired(false)
-      .setMaxLength(3);
-      
-    // Add toggle for enabling verbose logging
-    const verboseLoggingToggleInput = new TextInputBuilder()
-      .setCustomId('enableVerboseLogging')
-      .setLabel('Enable Verbose Logging? (yes/no)')
-      .setStyle(TextInputStyle.Short)
-      .setPlaceholder('no')
-      .setRequired(false)
-      .setMaxLength(3);
-    
-    // Pre-fill form if resuming setup
-    if (guildSettings.setupData.channelName) {
-      channelNameInput.setValue(guildSettings.setupData.channelName);
-    }
-    
-    if (guildSettings.setupData.modmailChannel) {
-      modmailChannelInput.setValue(guildSettings.setupData.modmailChannel);
-    }
-    
-    if (guildSettings.setupData.description) {
-      descriptionInput.setValue(guildSettings.setupData.description);
-    }
-    
-    if (guildSettings.setupData.enableModmail !== undefined) {
-      modmailToggleInput.setValue(guildSettings.setupData.enableModmail ? 'yes' : 'no');
-    }
-    
-    // Add the components to the modal
-    const firstActionRow = new ActionRowBuilder().addComponents(channelNameInput);
-    const secondActionRow = new ActionRowBuilder().addComponents(modmailChannelInput);
-    const thirdActionRow = new ActionRowBuilder().addComponents(modmailToggleInput);
-    const fourthActionRow = new ActionRowBuilder().addComponents(verboseLoggingToggleInput);
-    const fifthActionRow = new ActionRowBuilder().addComponents(descriptionInput);
-    
-    // Add inputs to the modal
-    modal.addComponents(firstActionRow, secondActionRow, thirdActionRow, fourthActionRow, fifthActionRow);
-    
-    // Update setup progress
-    await guildSettings.updateSetupProgress(1);
-    
-    // Show the modal
-    await interaction.showModal(modal);
   },
   
   /**
@@ -275,7 +406,7 @@ module.exports = {
       const botMember = interaction.guild.members.me;
       const permissions = channel.permissionsFor(botMember);
       
-      if (!permissions.has([PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.EmbedLinks])) {
+      if (!permissions.has(PermissionsBitField.Flags.SendMessages) || !permissions.has(PermissionsBitField.Flags.EmbedLinks)) {
         await interaction.reply({
           embeds: [createErrorEmbed('I don\'t have permission to send messages and embeds in that channel. Please adjust the permissions or choose another channel.')],
           ephemeral: true
@@ -375,11 +506,11 @@ module.exports = {
             permissionOverwrites: [
               {
                 id: interaction.guild.id, // @everyone role
-                deny: [PermissionsBitField.Flags.ViewChannel]
+                deny: PermissionsBitField.Flags.ViewChannel
               },
               {
                 id: interaction.guild.roles.cache.find(r => r.name === 'Staff')?.id || interaction.guild.ownerId,
-                allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory]
+                allow: PermissionsBitField.Flags.ViewChannel | PermissionsBitField.Flags.SendMessages | PermissionsBitField.Flags.ReadMessageHistory
               }
             ]
           });
@@ -512,288 +643,7 @@ module.exports = {
     }
   },
   
-  /**
-   * Handle the modal submission for setup wizard
-   * @param {Object} interaction - Modal submission interaction
-   * @param {Object} client - Discord client
-   */
-  async handleModal(interaction, client) {
-    try {
-      logger.info(`Processing setup modal for ${interaction.user.tag} (${interaction.user.id}) in ${interaction.guild.name}`);
-      
-      // Safely defer the reply
-      await interaction.deferReply({ ephemeral: true }).catch(err => {
-        logger.error(`Failed to defer reply for setup modal: ${err.message}`);
-        throw new Error('Invalid interaction: Unable to defer reply');
-      });
-      
-      // Create a loading indicator
-      const loader = new LoadingIndicator({
-        text: "Setting up your logging system...",
-        style: "gear",
-        color: "purple"
-      });
-      
-      await loader.start(interaction);
-      
-      // Get the input values with safety checks
-      const channelName = interaction.fields.getTextInputValue('channelName')?.trim() || config.logging.defaultChannelName;
-      const description = interaction.fields.getTextInputValue('description')?.trim() || 'The Royal Court logging system.';
-      const modmailChannelName = interaction.fields.getTextInputValue('modmailChannel')?.trim() || 'modmail-tickets';
-      
-      // Check if modmail should be enabled
-      let enableModmail = false;
-      try {
-        const modmailToggle = interaction.fields.getTextInputValue('enableModmail')?.trim().toLowerCase();
-        enableModmail = modmailToggle === 'yes' || modmailToggle === 'y';
-      } catch (error) {
-        // If field is missing or empty, default to false
-        enableModmail = false;
-      }
-      
-      // Check if verbose logging should be enabled
-      let enableVerboseLogging = false;
-      try {
-        const verboseToggle = interaction.fields.getTextInputValue('enableVerboseLogging')?.trim().toLowerCase();
-        enableVerboseLogging = verboseToggle === 'yes' || verboseToggle === 'y';
-      } catch (error) {
-        // If field is missing or empty, default to false
-        enableVerboseLogging = false;
-      }
-      
-      // Find or create a guild record in the database
-      const guildSettings = await models.Guild.findOrCreateGuild(interaction.guild.id);
-      
-      // Store the form data for potential resume later
-      await guildSettings.updateSetupProgress(2, {
-        channelName: channelName,
-        description: description,
-        modmailChannel: modmailChannelName,
-        enableModmail: enableModmail,
-        enableVerboseLogging: enableVerboseLogging
-      });
-      
-      await loader.updateText("Creating logging channel...");
-      
-      // Create the logging channel if it doesn't exist
-      let loggingChannel;
-      
-      if (guildSettings.loggingChannelId) {
-        // Try to use existing channel
-        loggingChannel = await interaction.guild.channels.fetch(guildSettings.loggingChannelId).catch(() => null);
-      }
-      
-      if (!loggingChannel) {
-        // Create a new channel
-        loggingChannel = await interaction.guild.channels.create({
-          name: channelName,
-          type: ChannelType.GuildText,
-          topic: `${config.bot.name} - ${config.bot.slogan} | Logging Channel`,
-          reason: 'Royal Court Logging System Setup'
-        });
-        
-        logger.info(`Created logging channel ${loggingChannel.name} in ${interaction.guild.name}`);
-      }
-      
-      // Store the logging channel ID
-      guildSettings.loggingChannelId = loggingChannel.id;
-      await guildSettings.save();
-      
-      // Set up verbose logging if enabled
-      let verboseLoggingChannel = null;
-      
-      if (enableVerboseLogging) {
-        await loader.updateText("Setting up verbose logging...");
-        
-        try {
-          // Create a verbose logging channel
-          const verboseChannelName = `${channelName}-verbose`;
-          verboseLoggingChannel = await interaction.guild.channels.create({
-            name: verboseChannelName,
-            type: ChannelType.GuildText,
-            topic: `${config.bot.name} - Verbose Logging Channel | All debug and detailed logs`,
-            reason: 'Royal Court Logging System Setup - Verbose Logging'
-          });
-          
-          guildSettings.verboseLoggingEnabled = true;
-          guildSettings.verboseLoggingChannelId = verboseLoggingChannel.id;
-          await guildSettings.save();
-          
-          logger.info(`Created verbose logging channel ${verboseLoggingChannel.name} in ${interaction.guild.name}`);
-          
-          // Welcome message for verbose logging channel
-          const verboseWelcomeEmbed = createEmbed({
-            title: '🔍 Verbose Logging Channel',
-            description: 'This channel contains detailed debug logs and additional information not included in the main logging channel.',
-            color: '#5865F2',
-            timestamp: true
-          });
-          
-          await verboseLoggingChannel.send({ embeds: [verboseWelcomeEmbed] });
-        } catch (error) {
-          logger.error(`Error setting up verbose logging: ${error.message}`);
-          // Don't fail the whole setup if just verbose logging fails
-        }
-      }
-      
-      // Set up modmail if enabled
-      if (enableModmail) {
-        await loader.updateText("Setting up modmail system...");
-        
-        try {
-          // Create or find a modmail category
-          let modmailCategory = interaction.guild.channels.cache.find(
-            c => c.type === ChannelType.GuildCategory && c.name === 'MODMAIL TICKETS'
-          );
-          
-          if (!modmailCategory) {
-            modmailCategory = await interaction.guild.channels.create({
-              name: 'MODMAIL TICKETS',
-              type: ChannelType.GuildCategory,
-              permissionOverwrites: [
-                {
-                  id: interaction.guild.id, // @everyone role
-                  deny: [PermissionsBitField.Flags.ViewChannel]
-                },
-                {
-                  id: interaction.guild.roles.cache.find(r => r.name === 'Staff')?.id || interaction.guild.ownerId,
-                  allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory]
-                }
-              ]
-            });
-            
-            logger.info(`Created modmail category in ${interaction.guild.name}`);
-          }
-          
-          // Update guild settings
-          guildSettings.modmailEnabled = true;
-          guildSettings.modmailCategoryId = modmailCategory.id;
-          
-          // Create a welcome/info channel for modmail in the category
-          const modmailChannel = await interaction.guild.channels.create({
-            name: modmailChannelName,
-            type: ChannelType.GuildText,
-            parent: modmailCategory.id,
-            topic: 'Modmail system information and tickets'
-          });
-          
-          guildSettings.modmailInfoChannelId = modmailChannel.id;
-          await guildSettings.save();
-          
-          // Create welcome message for modmail channel
-          const modmailWelcomeEmbed = createEmbed({
-            title: '📬 Modmail System',
-            description: 'This channel is for the modmail system. Users who DM the bot will have their messages forwarded here. Staff can reply to these messages using the `/modmail` commands.',
-            fields: [
-              {
-                name: '📋 Available Commands',
-                value: '`/modmail reply` - Reply to a user via modmail\n`/modmail close` - Close a modmail thread\n`/modmail block` - Block a user from using modmail\n`/modmail unblock` - Unblock a user from modmail'
-              },
-              {
-                name: '⚠️ Important Notes',
-                value: '- When users DM the bot, a new channel will be created under this category\n- Only members with access to this category can view modmail conversations\n- Be professional in your responses as you represent the server'
-              }
-            ],
-            color: '#5865F2',
-            timestamp: true
-          });
-          
-          await modmailChannel.send({ embeds: [modmailWelcomeEmbed] });
-          logger.info(`Created modmail info channel ${modmailChannel.name} in ${interaction.guild.name}`);
-        } catch (error) {
-          logger.error(`Error setting up modmail: ${error.message}`);
-          // Don't fail the whole setup if just modmail fails
-        }
-      }
-      
-      // Mark setup as completed
-      guildSettings.setupCompleted = true;
-      await guildSettings.save();
-      
-      // Finalize setup
-      await loader.updateText("Finalizing setup...");
-      
-      // Construct the success message
-      let successMessage = `✅ **Setup completed successfully!**\n\nLogging channel: ${loggingChannel}`;
-      
-      if (verboseLoggingChannel) {
-        successMessage += `\nVerbose logging channel: ${verboseLoggingChannel}`;
-      }
-      
-      if (enableModmail) {
-        successMessage += `\nModmail system is **enabled**`;
-      }
-      
-      // Create completion embed with next steps
-      const setupCompleteEmbed = createSuccessEmbed(
-        successMessage,
-        '✅ Setup Complete'
-      );
-      
-      // Add an additional field with next steps
-      setupCompleteEmbed.addFields([
-        {
-          name: 'Next Steps',
-          value: '• Use `/help` to see all available commands\n• Configure specific logging channels with `/logs`\n• Manage ignored channels and roles with `/ignore`'
-        }
-      ]);
-      
-      // Create completion components
-      const helpButton = new ButtonBuilder()
-        .setCustomId('help-button')
-        .setLabel('View Help')
-        .setStyle(ButtonStyle.Primary);
-      
-      const setupCompleteComponents = new ActionRowBuilder().addComponents(helpButton);
-      
-      // Stop the loader with the final message
-      await loader.stop({
-        embeds: [setupCompleteEmbed],
-        components: [setupCompleteComponents],
-        success: true
-      });
-      
-      // Send a welcome message to the logging channel
-      const loggingWelcomeEmbed = createEmbed({
-        title: '📝 Logging System Activated',
-        description: `The Royal Court logging system has been configured by ${interaction.user}.`,
-        fields: [
-          {
-            name: '📋 Available Log Types',
-            value: 'All enabled log categories will be reported in this channel.'
-          },
-          {
-            name: '⚙️ Configuration Options',
-            value: 'Use `/logs` to configure specific channels for different log types, and `/ignore` to exclude channels or roles from logging.'
-          }
-        ],
-        color: '#5865F2',
-        timestamp: true
-      });
-      
-      await loggingChannel.send({ embeds: [loggingWelcomeEmbed] });
-      
-    } catch (error) {
-      logger.error(`Error in setup modal handler: ${error.message}`);
-      
-      // Try to reply if we haven't already
-      try {
-        if (!interaction.replied && !interaction.deferred) {
-          await interaction.reply({
-            embeds: [createErrorEmbed(`An error occurred during setup: ${error.message}`)],
-            ephemeral: true
-          });
-        } else {
-          await interaction.followUp({
-            embeds: [createErrorEmbed(`An error occurred during setup: ${error.message}`)],
-            ephemeral: true
-          });
-        }
-      } catch (replyError) {
-        logger.error(`Failed to send error response for modal: ${replyError.message}`);
-      }
-    }
-  },
+  // Modal handling has been removed and replaced with direct option handling in the wizard subcommand
   
   /**
    * Handle button interactions for the setup command
@@ -816,91 +666,22 @@ module.exports = {
           await guildSettings.updateSetupProgress(0, {});
         }
         
-        // Create setup modal
-        const modal = new ModalBuilder()
-          .setCustomId('setup-modal')
-          .setTitle('Royal Court Logging Setup');
+        // Inform the user that we are now using slash command options instead of modal forms
+        const embed = createEmbed({
+          title: 'Setup Wizard Changes',
+          description: 'The setup process now uses direct slash command options instead of modal forms. Please use the `/setup wizard` command with the following options:',
+          fields: [
+            {
+              name: 'Available Options',
+              value: '`channel_name` - Name for the main logging channel\n`modmail_channel` - Name for the modmail channel\n`enable_modmail` - Whether to enable modmail\n`enable_verbose_logging` - Whether to enable verbose logging'
+            }
+          ],
+          color: '#5865F2'
+        });
         
-        // Add text input for the main logging channel
-        const channelNameInput = new TextInputBuilder()
-          .setCustomId('channelName')
-          .setLabel('Main logging channel name')
-          .setStyle(TextInputStyle.Short)
-          .setPlaceholder(config.logging.defaultChannelName)
-          .setRequired(false)
-          .setMaxLength(100);
-        
-        // Add input for modmail channel
-        const modmailChannelInput = new TextInputBuilder()
-          .setCustomId('modmailChannel')
-          .setLabel('Modmail channel name (optional)')
-          .setStyle(TextInputStyle.Short)
-          .setPlaceholder('modmail-tickets')
-          .setRequired(false)
-          .setMaxLength(100);
-        
-        // Add a description field
-        const descriptionInput = new TextInputBuilder()
-          .setCustomId('description')
-          .setLabel('Logging system description (optional)')
-          .setStyle(TextInputStyle.Paragraph)
-          .setPlaceholder('Add a custom description for your logging system...')
-          .setRequired(false)
-          .setMaxLength(1000);
-        
-        // Add toggle for enabling modmail
-        const modmailToggleInput = new TextInputBuilder()
-          .setCustomId('enableModmail')
-          .setLabel('Enable Modmail? (yes/no)')
-          .setStyle(TextInputStyle.Short)
-          .setPlaceholder('yes')
-          .setRequired(false)
-          .setMaxLength(3);
-          
-        // Add toggle for enabling verbose logging
-        const verboseLoggingToggleInput = new TextInputBuilder()
-          .setCustomId('enableVerboseLogging')
-          .setLabel('Enable Verbose Logging? (yes/no)')
-          .setStyle(TextInputStyle.Short)
-          .setPlaceholder('no')
-          .setRequired(false)
-          .setMaxLength(3);
-        
-        // Pre-fill the form if resuming
-        if (customId === 'setup-resume' && guildSettings.setupData) {
-          if (guildSettings.setupData.channelName) {
-            channelNameInput.setValue(guildSettings.setupData.channelName);
-          }
-          
-          if (guildSettings.setupData.modmailChannel) {
-            modmailChannelInput.setValue(guildSettings.setupData.modmailChannel);
-          }
-          
-          if (guildSettings.setupData.description) {
-            descriptionInput.setValue(guildSettings.setupData.description);
-          }
-          
-          if (guildSettings.setupData.enableModmail !== undefined) {
-            modmailToggleInput.setValue(guildSettings.setupData.enableModmail ? 'yes' : 'no');
-          }
-          
-          if (guildSettings.setupData.enableVerboseLogging !== undefined) {
-            verboseLoggingToggleInput.setValue(guildSettings.setupData.enableVerboseLogging ? 'yes' : 'no');
-          }
-        }
-        
-        // Add the components to the modal
-        const firstActionRow = new ActionRowBuilder().addComponents(channelNameInput);
-        const secondActionRow = new ActionRowBuilder().addComponents(modmailChannelInput);
-        const thirdActionRow = new ActionRowBuilder().addComponents(modmailToggleInput);
-        const fourthActionRow = new ActionRowBuilder().addComponents(verboseLoggingToggleInput);
-        const fifthActionRow = new ActionRowBuilder().addComponents(descriptionInput);
-        
-        // Add inputs to the modal
-        modal.addComponents(firstActionRow, secondActionRow, thirdActionRow, fourthActionRow, fifthActionRow);
-        
-        // Show the modal
-        await interaction.showModal(modal);
+        await interaction.editReply({
+          embeds: [embed],
+        });
         
         // Update setup progress
         if (customId === 'setup-restart') {
