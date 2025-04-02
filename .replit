@@ -13,14 +13,10 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "Discord Bot"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "Simple Bot"
+args = "Full Discord Bot"
 
 [[workflows.workflow]]
-name = "Discord Bot"
+name = "Full Discord Bot"
 author = "agent"
 
 [workflows.workflow.metadata]
@@ -32,20 +28,6 @@ task = "packager.installForAll"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "node bot.js"
-
-[[workflows.workflow]]
-name = "Simple Bot"
-author = "agent"
-
-[workflows.workflow.metadata]
-agentRequireRestartOnSave = false
-
-[[workflows.workflow.tasks]]
-task = "packager.installForAll"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "node simple-bot.js"
 
 [deployment]
 run = ["sh", "-c", "node bot.js"]
