@@ -446,6 +446,36 @@ module.exports = {
         }
       }
       
+      // Handle reset command buttons
+      if (interaction.customId.startsWith('reset-')) {
+        const resetCommand = client.commands.get('reset');
+        if (resetCommand && resetCommand.handleButton) {
+          try {
+            await resetCommand.handleButton(interaction, client);
+            return;
+          } catch (error) {
+            logger.error(`Error handling reset button ${interaction.customId}:`, error);
+            // Try to respond with an error message if possible
+            try {
+              if (!interaction.replied && !interaction.deferred) {
+                await interaction.reply({
+                  embeds: [createErrorEmbed(`An error occurred: ${error.message}`)],
+                  flags: { ephemeral: true }
+                });
+              } else {
+                await interaction.followUp({
+                  embeds: [createErrorEmbed(`An error occurred: ${error.message}`)],
+                  flags: { ephemeral: true }
+                });
+              }
+            } catch (replyError) {
+              logger.error(`Failed to send error reply for reset button: ${replyError.message}`);
+            }
+            return;
+          }
+        }
+      }
+      
       // Handle other button interactions (format: command-action-id)
       const [commandName] = interaction.customId.split('-');
       

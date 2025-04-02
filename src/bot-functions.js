@@ -4,172 +4,12 @@ const { logger } = require('./utils/logger');
 const { PermissionsBitField } = require('discord.js');
 const { createEmbed, createSuccessEmbed, createErrorEmbed } = require('./utils/embedBuilder');
 
-// Define all slash commands based on the original command structure
-const commands = [
-  // Info Commands
-  new SlashCommandBuilder()
-    .setName('ping')
-    .setDescription('Replies with bot latency'),
-
-  new SlashCommandBuilder()
-    .setName('info')
-    .setDescription('Get information about the bot'),
-    
-  new SlashCommandBuilder()
-    .setName('serverinfo')
-    .setDescription('Get information about the server'),
-    
-  new SlashCommandBuilder()
-    .setName('help')
-    .setDescription('Shows available commands and bot features'),
-    
-  new SlashCommandBuilder()
-    .setName('invite')
-    .setDescription('Get an invite link for the bot'),
-    
-  new SlashCommandBuilder()
-    .setName('stats')
-    .setDescription('Display bot statistics and performance metrics'),
-  
-  // Management Commands
-  new SlashCommandBuilder()
-    .setName('setup')
-    .setDescription('Set up the logging system for your server')
-    .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
-    
-  new SlashCommandBuilder()
-    .setName('logs')
-    .setDescription('Configure logging settings')
-    .setDefaultMemberPermissions(PermissionsBitField.Flags.ManageGuild)
-    .addSubcommand(subcommand => 
-      subcommand
-        .setName('view')
-        .setDescription('View current logging configuration'))
-    .addSubcommand(subcommand => 
-      subcommand
-        .setName('setchannel')
-        .setDescription('Set a custom logging channel for a category')
-        .addStringOption(option => 
-          option.setName('category')
-            .setDescription('The log category to configure')
-            .setRequired(true))
-        .addChannelOption(option => 
-          option.setName('channel')
-            .setDescription('The channel to send logs to')
-            .setRequired(true)))
-    .addSubcommand(subcommand => 
-      subcommand
-        .setName('reset')
-        .setDescription('Reset logging configuration to defaults')),
-    
-  new SlashCommandBuilder()
-    .setName('categories')
-    .setDescription('Manage log categories')
-    .setDefaultMemberPermissions(PermissionsBitField.Flags.ManageGuild)
-    .addSubcommand(subcommand => 
-      subcommand
-        .setName('list')
-        .setDescription('List available log categories'))
-    .addSubcommand(subcommand => 
-      subcommand
-        .setName('enable')
-        .setDescription('Enable a log category')
-        .addStringOption(option => 
-          option.setName('category')
-            .setDescription('The category to enable')
-            .setRequired(true)))
-    .addSubcommand(subcommand => 
-      subcommand
-        .setName('disable')
-        .setDescription('Disable a log category')
-        .addStringOption(option => 
-          option.setName('category')
-            .setDescription('The category to disable')
-            .setRequired(true))),
-            
-  new SlashCommandBuilder()
-    .setName('ignore')
-    .setDescription('Configure channels, roles, or users to ignore for logging')
-    .setDefaultMemberPermissions(PermissionsBitField.Flags.ManageGuild)
-    .addSubcommand(subcommand => 
-      subcommand
-        .setName('channel')
-        .setDescription('Ignore or unignore a channel for logging')
-        .addChannelOption(option => 
-          option.setName('channel')
-            .setDescription('The channel to ignore/unignore')
-            .setRequired(true)))
-    .addSubcommand(subcommand => 
-      subcommand
-        .setName('role')
-        .setDescription('Ignore or unignore a role for logging')
-        .addRoleOption(option => 
-          option.setName('role')
-            .setDescription('The role to ignore/unignore')
-            .setRequired(true)))
-    .addSubcommand(subcommand => 
-      subcommand
-        .setName('list')
-        .setDescription('List all ignored channels and roles')),
-        
-  new SlashCommandBuilder()
-    .setName('enable')
-    .setDescription('Enable the bot in this server')
-    .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
-    
-  new SlashCommandBuilder()
-    .setName('disable')
-    .setDescription('Disable the bot in this server')
-    .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
-    
-  new SlashCommandBuilder()
-    .setName('modmail')
-    .setDescription('Manage the modmail system')
-    .setDefaultMemberPermissions(PermissionsBitField.Flags.ManageGuild)
-    .addSubcommand(subcommand => 
-      subcommand
-        .setName('reply')
-        .setDescription('Reply to a modmail thread')
-        .addUserOption(option => 
-          option.setName('user')
-            .setDescription('The user to reply to')
-            .setRequired(true)))
-    .addSubcommand(subcommand => 
-      subcommand
-        .setName('close')
-        .setDescription('Close a modmail thread')
-        .addUserOption(option => 
-          option.setName('user')
-            .setDescription('The user whose thread to close')
-            .setRequired(true))
-        .addStringOption(option => 
-          option.setName('reason')
-            .setDescription('The reason for closing the thread')
-            .setRequired(false)))
-    .addSubcommand(subcommand => 
-      subcommand
-        .setName('block')
-        .setDescription('Block a user from using modmail')
-        .addUserOption(option => 
-          option.setName('user')
-            .setDescription('The user to block')
-            .setRequired(true))
-        .addStringOption(option => 
-          option.setName('reason')
-            .setDescription('The reason for blocking the user')
-            .setRequired(false)))
-    .addSubcommand(subcommand => 
-      subcommand
-        .setName('unblock')
-        .setDescription('Unblock a user from using modmail')
-        .addUserOption(option => 
-          option.setName('user')
-            .setDescription('The user to unblock')
-            .setRequired(true)))
-];
+// Note: Command definitions have been moved to individual command files in the src/commands directory
+// This file now only contains utility functions for handling interactions
 
 /**
  * Register commands to all available guilds
+ * This function is no longer used - see bot.js for the actual implementation
  * @param {Client} client Discord client instance
  */
 async function registerCommandsToGuilds(client) {
@@ -191,8 +31,10 @@ async function registerCommandsToGuilds(client) {
     
     logger.info('Started refreshing application (/) commands...');
     
-    const commandData = commands.map(command => command.toJSON());
-    logger.info(`Prepared ${commandData.length} commands for registration`);
+    // This function is deprecated - commands are loaded from the file system now
+    // const commandData = commands.map(command => command.toJSON());
+    const commandData = [];
+    logger.info(`This function is now deprecated - command registration happens in bot.js`);
     
     // Register to each guild the bot is in
     const guilds = Array.from(client.guilds.cache.values());
@@ -458,7 +300,6 @@ async function handleInteraction(interaction, client) {
                 { name: 'Ping', value: `${Math.round(client.ws.ping)}ms`, inline: true },
                 { name: 'Servers', value: client.guilds.cache.size.toString(), inline: true },
                 { name: 'Users', value: client.guilds.cache.reduce((acc, guild) => acc + guild.memberCount, 0).toString(), inline: true },
-                { name: 'Commands', value: commands.length.toString(), inline: true },
                 { name: 'Platform', value: process.platform, inline: true },
                 { name: 'Node.js', value: process.version, inline: true }
               ]
@@ -521,8 +362,8 @@ async function handleInteraction(interaction, client) {
   }
 }
 
+// No longer export commands array, only utility functions
 module.exports = {
-  commands,
-  registerCommandsToGuilds,
+  // commands is intentionally removed to avoid conflicts
   handleInteraction
 };
