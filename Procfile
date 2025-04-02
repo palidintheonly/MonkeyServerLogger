@@ -1,0 +1,1 @@
+worker: npm install && node src/shard.js
