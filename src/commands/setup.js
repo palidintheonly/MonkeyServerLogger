@@ -10,7 +10,42 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('setup')
     .setDescription('Set up the logging system for your server')
-    .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
+    .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('wizard')
+        .setDescription('Start the setup wizard with a guided interface')
+    )
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('logs')
+        .setDescription('Configure the logging channel')
+        .addChannelOption(option => 
+          option.setName('channel')
+            .setDescription('The channel for logs')
+            .setRequired(false)
+        )
+    )
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('modmail')
+        .setDescription('Configure the modmail system')
+        .addBooleanOption(option =>
+          option.setName('enabled')
+            .setDescription('Enable or disable the modmail system')
+            .setRequired(true)
+        )
+        .addChannelOption(option =>
+          option.setName('channel')
+            .setDescription('Modmail info channel')
+            .setRequired(false)
+        )
+    )
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('reset')
+        .setDescription('Reset all settings to default')
+    ),
   
   /**
    * Execute the setup command
@@ -23,13 +58,55 @@ module.exports = {
         !interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
       await interaction.reply({
         embeds: [createErrorEmbed('Only the server owner or administrators can use the setup command.')],
-        flags: { ephemeral: true }
+        ephemeral: true
       });
       return;
     }
     
-    // Check for and resume existing setup if available
+    // Get guild settings from database
     const guildSettings = await models.Guild.findOrCreateGuild(interaction.guild.id);
+    
+    // Handle different subcommands
+    const subcommand = interaction.options.getSubcommand();
+    
+    try {
+      switch (subcommand) {
+        case 'wizard':
+          await this.handleWizardSubcommand(interaction, client, guildSettings);
+          break;
+          
+        case 'logs':
+          await this.handleLogsSubcommand(interaction, client, guildSettings);
+          break;
+          
+        case 'modmail':
+          await this.handleModmailSubcommand(interaction, client, guildSettings);
+          break;
+          
+        case 'reset':
+          await this.handleResetSubcommand(interaction, client, guildSettings);
+          break;
+          
+        default:
+          // If no subcommand specified or not recognized, default to wizard
+          await this.handleWizardSubcommand(interaction, client, guildSettings);
+      }
+    } catch (error) {
+      logger.error(`Error executing setup ${subcommand} subcommand: ${error.message}`);
+      await interaction.reply({
+        embeds: [createErrorEmbed(`An error occurred while setting up: ${error.message}`)],
+        ephemeral: true
+      });
+    }
+  },
+  
+  /**
+   * Handle the wizard subcommand that guides users through setup
+   * @param {Object} interaction - Discord interaction
+   * @param {Object} client - Discord client
+   * @param {Object} guildSettings - Guild settings from database
+   */
+  async handleWizardSubcommand(interaction, client, guildSettings) {
     const setupProgress = guildSettings.getSetupProgress();
     
     // If we have a setup in progress, ask if the user wants to resume
@@ -71,7 +148,7 @@ module.exports = {
       await interaction.reply({
         embeds: [resumeEmbed],
         components: [buttonRow],
-        flags: { ephemeral: true }
+        ephemeral: true
       });
       
       return;
@@ -81,7 +158,7 @@ module.exports = {
     // Create a modal for initial setup
     const modal = new ModalBuilder()
       .setCustomId('setup-modal')
-      .setTitle('Monkey Bytes Logging Setup');
+      .setTitle('Royal Court Logging Setup');
     
     // Add text input for the main logging channel
     const channelNameInput = new TextInputBuilder()
@@ -160,6 +237,242 @@ module.exports = {
     
     // Show the modal
     await interaction.showModal(modal);
+  },
+  
+  /**
+   * Handle the logs subcommand to configure logging channels
+   * @param {Object} interaction - Discord interaction
+   * @param {Object} client - Discord client
+   * @param {Object} guildSettings - Guild settings from database
+   */
+  async handleLogsSubcommand(interaction, client, guildSettings) {
+    const channel = interaction.options.getChannel('channel');
+    
+    if (channel) {
+      // User provided a channel, set it as logging channel
+      if (channel.type !== ChannelType.GuildText) {
+        await interaction.reply({
+          embeds: [createErrorEmbed('The logging channel must be a text channel.')],
+          ephemeral: true
+        });
+        return;
+      }
+      
+      // Test permissions in the channel
+      const botMember = interaction.guild.members.me;
+      const permissions = channel.permissionsFor(botMember);
+      
+      if (!permissions.has([PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.EmbedLinks])) {
+        await interaction.reply({
+          embeds: [createErrorEmbed('I don\'t have permission to send messages and embeds in that channel. Please adjust the permissions or choose another channel.')],
+          ephemeral: true
+        });
+        return;
+      }
+      
+      // Set the channel as logging channel
+      guildSettings.loggingChannelId = channel.id;
+      await guildSettings.save();
+      
+      // Send a welcome message to the channel
+      const welcomeEmbed = createEmbed({
+        title: '📝 Logging Channel Configured',
+        description: 'This channel has been set up to receive logging messages from The Royal Court Herald bot.',
+        fields: [
+          {
+            name: '📋 Available Commands',
+            value: 'Use `/help` to see a list of available commands.'
+          }
+        ],
+        color: '#5865F2',
+        timestamp: true
+      });
+      
+      await channel.send({ embeds: [welcomeEmbed] });
+      
+      // Confirm to the user
+      await interaction.reply({
+        embeds: [createSuccessEmbed(`Logging channel set to ${channel.toString()}`)],
+        ephemeral: true
+      });
+    } else {
+      // No channel provided, show current settings
+      const currentChannel = guildSettings.loggingChannelId 
+        ? interaction.guild.channels.cache.get(guildSettings.loggingChannelId)
+        : null;
+      
+      const settingsEmbed = createEmbed({
+        title: '⚙️ Logging Settings',
+        description: 'Current logging configuration for this server.',
+        fields: [
+          {
+            name: 'Logging Channel',
+            value: currentChannel ? currentChannel.toString() : 'Not set'
+          },
+          {
+            name: 'Setup Completed',
+            value: guildSettings.setupCompleted ? 'Yes' : 'No'
+          },
+          {
+            name: 'How to Change',
+            value: 'Use `/setup logs channel:#channel-name` to set a specific channel for logs.'
+          }
+        ],
+        color: '#5865F2'
+      });
+      
+      await interaction.reply({
+        embeds: [settingsEmbed],
+        ephemeral: true
+      });
+    }
+  },
+  
+  /**
+   * Handle the modmail subcommand to configure the modmail system
+   * @param {Object} interaction - Discord interaction
+   * @param {Object} client - Discord client
+   * @param {Object} guildSettings - Guild settings from database
+   */
+  async handleModmailSubcommand(interaction, client, guildSettings) {
+    const enableModmail = interaction.options.getBoolean('enabled');
+    const channel = interaction.options.getChannel('channel');
+    
+    // Create loading indicator
+    const loader = new LoadingIndicator({
+      text: "Configuring modmail system...",
+      style: "dots",
+      color: "blue"
+    });
+    
+    await loader.start(interaction);
+    
+    try {
+      if (enableModmail) {
+        // Enabling modmail system
+        let modmailCategory = interaction.guild.channels.cache.find(
+          c => c.type === ChannelType.GuildCategory && c.name === 'MODMAIL TICKETS'
+        );
+        
+        // Create category if it doesn't exist
+        if (!modmailCategory) {
+          modmailCategory = await interaction.guild.channels.create({
+            name: 'MODMAIL TICKETS',
+            type: ChannelType.GuildCategory,
+            permissionOverwrites: [
+              {
+                id: interaction.guild.id, // @everyone role
+                deny: [PermissionsBitField.Flags.ViewChannel]
+              },
+              {
+                id: interaction.guild.roles.cache.find(r => r.name === 'Staff')?.id || interaction.guild.ownerId,
+                allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory]
+              }
+            ]
+          });
+        }
+        
+        // Create or use the specified modmail info channel
+        let modmailChannel;
+        
+        if (channel && channel.type === ChannelType.GuildText) {
+          // Use the specified channel
+          modmailChannel = channel;
+          
+          // Move to the modmail category if not already there
+          if (modmailChannel.parentId !== modmailCategory.id) {
+            await modmailChannel.setParent(modmailCategory.id);
+          }
+        } else {
+          // Create a new channel
+          modmailChannel = await interaction.guild.channels.create({
+            name: 'modmail-info',
+            type: ChannelType.GuildText,
+            parent: modmailCategory.id,
+            topic: 'Modmail system information and tickets'
+          });
+        }
+        
+        // Create welcome message for modmail channel
+        const modmailWelcomeEmbed = createEmbed({
+          title: '📬 Modmail System',
+          description: 'This channel is for the modmail system. Users who DM the bot will have their messages forwarded here. Staff can reply to these messages using the `/modmail` commands.',
+          fields: [
+            {
+              name: '📋 Available Commands',
+              value: '`/modmail reply` - Reply to a user via modmail\n`/modmail close` - Close a modmail thread\n`/modmail block` - Block a user from using modmail\n`/modmail unblock` - Unblock a user from modmail'
+            },
+            {
+              name: '⚠️ Important Notes',
+              value: '- When users DM the bot, a new channel will be created under this category\n- Only members with access to this category can view modmail conversations\n- Be professional in your responses as you represent the server'
+            }
+          ],
+          color: '#5865F2',
+          timestamp: true
+        });
+        
+        await modmailChannel.send({ embeds: [modmailWelcomeEmbed] });
+        
+        // Update guild settings
+        guildSettings.modmailEnabled = true;
+        guildSettings.modmailCategoryId = modmailCategory.id;
+        guildSettings.modmailInfoChannelId = modmailChannel.id;
+        await guildSettings.save();
+        
+        await loader.stop({
+          text: "✅ Modmail system enabled successfully!",
+          success: true
+        });
+      } else {
+        // Disabling modmail system
+        guildSettings.modmailEnabled = false;
+        await guildSettings.save();
+        
+        await loader.stop({
+          text: "Modmail system has been disabled. You can re-enable it at any time.",
+          success: true
+        });
+      }
+    } catch (error) {
+      logger.error(`Error configuring modmail: ${error.message}`);
+      await loader.stop({
+        text: `Error: ${error.message}`,
+        success: false
+      });
+    }
+  },
+  
+  /**
+   * Handle the reset subcommand to reset all settings
+   * @param {Object} interaction - Discord interaction
+   * @param {Object} client - Discord client
+   * @param {Object} guildSettings - Guild settings from database
+   */
+  async handleResetSubcommand(interaction, client, guildSettings) {
+    // Create confirm buttons
+    const confirmButton = new ButtonBuilder()
+      .setCustomId('setup-reset-confirm')
+      .setLabel('Reset Everything')
+      .setStyle(ButtonStyle.Danger);
+    
+    const cancelButton = new ButtonBuilder()
+      .setCustomId('setup-reset-cancel')
+      .setLabel('Cancel')
+      .setStyle(ButtonStyle.Secondary);
+    
+    const buttonRow = new ActionRowBuilder().addComponents(cancelButton, confirmButton);
+    
+    const confirmEmbed = createEmbed({
+      title: '⚠️ Reset All Settings?',
+      description: 'Are you sure you want to reset all bot settings for this server? This will:\n\n• Clear all logging preferences\n• Disable modmail if enabled\n• Reset any custom configurations\n\n**This action cannot be undone!**',
+      color: '#FF0000' // Red
+    });
+    
+    await interaction.reply({
+      embeds: [confirmEmbed],
+      components: [buttonRow],
+      ephemeral: true
+    });
   },
   
   /**
@@ -630,18 +943,21 @@ module.exports = {
    * @param {Object} client - Discord client
    */
   async handleButton(interaction, client) {
-    // Handle setup resume/restart buttons
-    if (interaction.customId === 'setup-resume') {
-      await interaction.deferUpdate();
+    try {
+      const customId = interaction.customId;
       
-      // Get guild settings to continue setup
-      const guildSettings = await models.Guild.findOrCreateGuild(interaction.guild.id);
-      const setupProgress = guildSettings.getSetupProgress();
-      
-      // Create a new modal for the setup form
-      const modal = new ModalBuilder()
-        .setCustomId('setup-modal')
-        .setTitle('Monkey Bytes Logging Setup');
+      // Handle setup resume/restart buttons
+      if (customId === 'setup-resume') {
+        await interaction.deferUpdate().catch(() => logger.warn('Could not defer update for resume button'));
+        
+        // Get guild settings to continue setup
+        const guildSettings = await models.Guild.findOrCreateGuild(interaction.guild.id);
+        const setupProgress = guildSettings.getSetupProgress();
+        
+        // Create a new modal for the setup form
+        const modal = new ModalBuilder()
+          .setCustomId('setup-modal')
+          .setTitle('Royal Court Logging Setup');
       
       // Add text input for the main logging channel
       const channelNameInput = new TextInputBuilder()
