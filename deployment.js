@@ -328,7 +328,8 @@ app.get('/admin', isOwner, (req, res) => {
             font-family: Arial, sans-serif;
             margin: 0;
             padding: 0;
-            background-color: #f5f5f5;
+            background-color: #36393f; /* Discord dark background */
+            color: #dcddde; /* Discord text color */
           }
           .container {
             max-width: 1200px;
@@ -336,14 +337,16 @@ app.get('/admin', isOwner, (req, res) => {
             padding: 20px;
           }
           header {
-            background-color: #5865F2;
+            background-color: #202225; /* Discord darker gray */
             color: white;
             padding: 20px;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
           }
-          h1 { margin: 0; }
+          h1 { margin: 0; color: #ffffff; }
+          h2, h3 { color: #ffffff; }
           .nav-links {
             display: flex;
             gap: 20px;
@@ -353,21 +356,31 @@ app.get('/admin', isOwner, (req, res) => {
             color: white;
             text-decoration: none;
             padding: 8px 16px;
-            background-color: rgba(255,255,255,0.1);
+            background-color: #5865F2; /* Discord blurple */
             border-radius: 4px;
+            transition: background-color 0.3s;
+          }
+          .nav-link:hover, .logout:hover {
+            background-color: #4752C4; /* Darker blurple */
+            box-shadow: 0 0 8px rgba(88, 101, 242, 0.5);
           }
           .card {
-            background-color: white;
+            background-color: #2f3136; /* Discord darker background */
             border-radius: 8px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
             padding: 20px;
             margin-bottom: 20px;
+            border: 1px solid #202225; /* Discord border color */
           }
           .card-title {
-            border-bottom: 1px solid #eee;
+            border-bottom: 1px solid #40444b; /* Discord separator color */
             padding-bottom: 10px;
             margin-top: 0;
-            color: #5865F2;
+            color: #ffffff;
+          }
+          p { 
+            color: #b9bbbe; /* Discord secondary text color */
+            line-height: 1.5; 
           }
           .status { 
             padding: 10px; 
@@ -377,7 +390,7 @@ app.get('/admin', isOwner, (req, res) => {
           }
           .online { background-color: #57F287; color: white; }
           .owner-badge {
-            background-color: #ED4245;
+            background-color: #ED4245; /* Discord red */
             color: white;
             padding: 5px 10px;
             border-radius: 4px;
@@ -391,11 +404,17 @@ app.get('/admin', isOwner, (req, res) => {
             margin-bottom: 20px;
           }
           .stat-card {
-            background-color: #5865F2;
+            background-color: #5865F2; /* Discord blurple */
             color: white;
             padding: 20px;
             border-radius: 8px;
             text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            transition: transform 0.2s, box-shadow 0.2s;
+          }
+          .stat-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
           }
           .stat-value {
             font-size: 24px;
@@ -410,7 +429,11 @@ app.get('/admin', isOwner, (req, res) => {
             display: flex;
             justify-content: space-between;
             padding: 15px;
-            border-bottom: 1px solid #eee;
+            border-bottom: 1px solid #40444b; /* Discord separator color */
+            transition: background-color 0.2s;
+          }
+          .guild-item:hover {
+            background-color: #40444b; /* Discord hover color */
           }
           .guild-item:last-child {
             border-bottom: none;
@@ -486,7 +509,8 @@ app.get('/', isAuthenticated, (req, res) => {
             font-family: Arial, sans-serif;
             margin: 0;
             padding: 0;
-            background-color: #f5f5f5;
+            background-color: #36393f; /* Discord dark background */
+            color: #dcddde; /* Discord text color */
           }
           .container {
             max-width: 1000px;
@@ -494,33 +518,45 @@ app.get('/', isAuthenticated, (req, res) => {
             padding: 20px;
           }
           header {
-            background-color: #5865F2;
+            background-color: #202225; /* Discord darker gray */
             color: white;
             padding: 20px;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
           }
-          h1 { margin: 0; }
+          h1 { margin: 0; color: #ffffff; }
+          h2 { color: #ffffff; }
           .logout {
             color: white;
             text-decoration: none;
             padding: 8px 16px;
-            background-color: rgba(255,255,255,0.1);
+            background-color: #5865F2; /* Discord blurple */
             border-radius: 4px;
+            transition: background-color 0.3s;
+          }
+          .logout:hover {
+            background-color: #4752C4; /* Darker blurple */
+            box-shadow: 0 0 8px rgba(88, 101, 242, 0.5);
           }
           .card {
-            background-color: white;
+            background-color: #2f3136; /* Discord darker background */
             border-radius: 8px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
             padding: 20px;
             margin-bottom: 20px;
+            border: 1px solid #202225; /* Discord border color */
           }
           .card-title {
-            border-bottom: 1px solid #eee;
+            border-bottom: 1px solid #40444b; /* Discord separator color */
             padding-bottom: 10px;
             margin-top: 0;
-            color: #5865F2;
+            color: #ffffff;
+          }
+          p { 
+            color: #b9bbbe; /* Discord secondary text color */
+            line-height: 1.5;
           }
           .status { 
             padding: 10px; 
@@ -529,17 +565,29 @@ app.get('/', isAuthenticated, (req, res) => {
             display: inline-block;
           }
           .online { background-color: #57F287; color: white; }
-          .info { background-color: #5865F2; color: white; margin: 5px 0; padding: 15px; border-radius: 8px; }
+          .info { 
+            background-color: #5865F2; /* Discord blurple */
+            color: white; 
+            margin: 15px 0; 
+            padding: 15px; 
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+          }
           .user-info {
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 15px;
           }
           .avatar {
-            width: 50px;
-            height: 50px;
+            width: 40px;
+            height: 40px;
             border-radius: 50%;
-            background-color: #ccc;
+            background-color: #5865F2;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
           }
         </style>
       </head>
