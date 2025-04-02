@@ -4,6 +4,8 @@ const { Client, GatewayIntentBits, Collection, REST, Routes } = require('discord
 const fs = require('fs');
 const path = require('path');
 const { logger } = require('./src/utils/logger');
+const { logger: enhancedLogger } = require('./src/utils/enhanced-logger');
+const { models, connectToDatabase } = require('./src/database/db');
 
 // Create client
 const client = new Client({
@@ -320,9 +322,75 @@ client.once('ready', async () => {
   
   // Set activity
   client.user.setPresence({
-    activities: [{ name: 'Fixed Command Handling', type: 0 }],
+    activities: [{ name: 'with Enhanced Verbose Logging | /help', type: 0 }],
     status: 'online'
   });
+  
+  // Initialize enhanced logging
+  enhancedLogger.initDiscordLogging(client);
+  
+  // Set up enhanced logging for each guild
+  for (const [guildId, guild] of client.guilds.cache) {
+    try {
+      // Load guild settings from database
+      let guildSettings;
+      try {
+        // Check if models.Guild exists before trying to use it
+        if (models && models.Guild) {
+          // Load guild settings from database
+          guildSettings = await models.Guild.findOrCreateGuild(guildId);
+        } else {
+          logger.warn(`Database models not initialized for guild ${guild.name}, skipping enhanced logging setup`);
+          continue;
+        }
+      } catch (error) {
+        logger.error(`Error accessing guild settings for ${guild.name}: ${error.message}`);
+        continue;
+      }
+      
+      // Skip if setup not completed
+      if (!guildSettings || !guildSettings.setupCompleted) {
+        logger.info(`Skipping logging setup for ${guild.name} (setup not completed)`);
+        continue;
+      }
+      
+      // Set up regular logging channel if available
+      if (guildSettings.loggingChannelId) {
+        try {
+          const logChannel = await guild.channels.fetch(guildSettings.loggingChannelId);
+          if (logChannel) {
+            enhancedLogger.setLogChannel(logChannel, false);
+            logger.info(`Regular logging initialized for ${guild.name}`);
+          }
+        } catch (error) {
+          logger.error(`Error setting up regular logging channel for ${guild.name}: ${error.message}`);
+        }
+      }
+      
+      // Set up verbose logging if enabled
+      if (guildSettings.isVerboseLoggingEnabled() && guildSettings.verboseLoggingChannelId) {
+        try {
+          const verboseChannel = await guild.channels.fetch(guildSettings.verboseLoggingChannelId);
+          if (verboseChannel) {
+            enhancedLogger.setLogChannel(verboseChannel, true);
+            enhancedLogger.setVerboseLogging(true);
+            logger.info(`Verbose logging initialized for ${guild.name}`);
+            
+            // Log test message to verbose channel
+            enhancedLogger.debug(`Verbose logging initialized for ${guild.name}`, {
+              guild: guild.name,
+              time: new Date().toISOString(),
+              verboseEnabled: true
+            });
+          }
+        } catch (error) {
+          logger.error(`Error setting up verbose logging channel for ${guild.name}: ${error.message}`);
+        }
+      }
+    } catch (error) {
+      logger.error(`Error initializing logging for guild ${guildId}: ${error.message}`);
+    }
+  }
   
   // Register commands
   await registerCommands();
@@ -379,9 +447,20 @@ const tokenFirstChars = token.substring(0, 5);
 const tokenLastChars = token.substring(tokenLength - 5);
 logger.info(`Using token of length ${tokenLength}, starting with ${tokenFirstChars}... and ending with ...${tokenLastChars}`);
 
-// Login to Discord
-logger.info('Attempting to connect to Discord...');
-client.login(token)
+// Connect to database first
+logger.info('Connecting to database...');
+connectToDatabase()
+  .then(() => {
+    // Login to Discord after database connection is established
+    logger.info('Database connected, attempting to connect to Discord...');
+    return client.login(token);
+  })
+  .catch(dbError => {
+    logger.error('Failed to connect to database:', dbError);
+    // Continue with Discord login even if database fails
+    logger.info('Attempting to connect to Discord despite database error...');
+    return client.login(token);
+  })
   .catch(error => {
     logger.error('Failed to log in to Discord:', error);
     process.exit(1);

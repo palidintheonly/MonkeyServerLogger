@@ -1,6 +1,8 @@
 const { ActivityType, version: discordJsVersion } = require('discord.js');
 const { logger } = require('../../utils/logger');
+const { logger: enhancedLogger } = require('../../utils/enhanced-logger');
 const config = require('../../config');
+const models = require('../../database/db');
 
 module.exports = {
   name: 'ready',
@@ -75,5 +77,57 @@ module.exports = {
       logger.warn('Not connected to any guilds yet!');
     }
     logger.info('==================================================');
+    
+    // Initialize enhanced logging system
+    enhancedLogger.initDiscordLogging(client);
+    
+    // Set up the enhanced logging for each guild
+    for (const [guildId, guild] of client.guilds.cache) {
+      try {
+        // Load guild settings from database
+        const guildSettings = await models.Guild.findOrCreateGuild(guildId);
+        
+        // Skip if setup not completed
+        if (!guildSettings.setupCompleted) continue;
+        
+        // Set up regular logging channel if available
+        if (guildSettings.loggingChannelId) {
+          try {
+            const logChannel = await guild.channels.fetch(guildSettings.loggingChannelId);
+            if (logChannel) {
+              enhancedLogger.setLogChannel(logChannel, false);
+              logger.info(`Regular logging initialized for ${guild.name}`);
+            }
+          } catch (error) {
+            logger.error(`Error setting up regular logging channel for ${guild.name}: ${error.message}`);
+          }
+        }
+        
+        // Set up verbose logging if enabled
+        if (guildSettings.isVerboseLoggingEnabled() && guildSettings.verboseLoggingChannelId) {
+          try {
+            const verboseChannel = await guild.channels.fetch(guildSettings.verboseLoggingChannelId);
+            if (verboseChannel) {
+              enhancedLogger.setLogChannel(verboseChannel, true);
+              enhancedLogger.setVerboseLogging(true);
+              logger.info(`Verbose logging initialized for ${guild.name}`);
+              
+              // Log test messages
+              enhancedLogger.debug(`Verbose logging test for ${guild.name}`, { 
+                guild: guild.name, 
+                time: new Date().toISOString(),
+                test: true
+              });
+            }
+          } catch (error) {
+            logger.error(`Error setting up verbose logging channel for ${guild.name}: ${error.message}`);
+          }
+        }
+      } catch (error) {
+        logger.error(`Error initializing logging for guild ${guildId}: ${error.message}`);
+      }
+    }
+    
+    logger.info('Logging system initialization complete');
   }
 };

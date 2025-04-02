@@ -166,6 +166,20 @@ module.exports = (sequelize) => {
       type: DataTypes.STRING,
       allowNull: true,
       defaultValue: null
+    },
+    
+    // Verbose logging enabled flag
+    verboseLoggingEnabled: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false
+    },
+    
+    // Verbose logging channel ID (separate from main logging)
+    verboseLoggingChannelId: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      defaultValue: null
     }
   }, {
     // Additional model options
@@ -195,6 +209,15 @@ module.exports = (sequelize) => {
   
   Guild.prototype.getModmailCategory = function() {
     return this.modmailCategoryId;
+  };
+  
+  // Verbose logging methods
+  Guild.prototype.isVerboseLoggingEnabled = function() {
+    return this.verboseLoggingEnabled === true;
+  };
+  
+  Guild.prototype.getVerboseLoggingChannel = function() {
+    return this.verboseLoggingChannelId;
   };
   
   // Setup progress and data management methods

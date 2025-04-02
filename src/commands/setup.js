@@ -117,6 +117,15 @@ module.exports = {
       .setPlaceholder('yes')
       .setRequired(false)
       .setMaxLength(3);
+      
+    // Add toggle for enabling verbose logging
+    const verboseLoggingToggleInput = new TextInputBuilder()
+      .setCustomId('enableVerboseLogging')
+      .setLabel('Enable Verbose Logging? (yes/no)')
+      .setStyle(TextInputStyle.Short)
+      .setPlaceholder('no')
+      .setRequired(false)
+      .setMaxLength(3);
     
     // Pre-fill form if resuming setup
     if (guildSettings.setupData.channelName) {
@@ -139,10 +148,11 @@ module.exports = {
     const firstActionRow = new ActionRowBuilder().addComponents(channelNameInput);
     const secondActionRow = new ActionRowBuilder().addComponents(modmailChannelInput);
     const thirdActionRow = new ActionRowBuilder().addComponents(modmailToggleInput);
-    const fourthActionRow = new ActionRowBuilder().addComponents(descriptionInput);
+    const fourthActionRow = new ActionRowBuilder().addComponents(verboseLoggingToggleInput);
+    const fifthActionRow = new ActionRowBuilder().addComponents(descriptionInput);
     
     // Add inputs to the modal
-    modal.addComponents(firstActionRow, secondActionRow, thirdActionRow, fourthActionRow);
+    modal.addComponents(firstActionRow, secondActionRow, thirdActionRow, fourthActionRow, fifthActionRow);
     
     // Update setup progress
     await guildSettings.updateSetupProgress(1);
@@ -199,6 +209,16 @@ module.exports = {
         enableModmail = false;
       }
       
+      // Check if verbose logging should be enabled
+      let enableVerboseLogging = false;
+      try {
+        const verboseToggle = interaction.fields.getTextInputValue('enableVerboseLogging').trim().toLowerCase();
+        enableVerboseLogging = verboseToggle === 'yes' || verboseToggle === 'y';
+      } catch (error) {
+        // If field is missing or empty, default to false
+        enableVerboseLogging = false;
+      }
+      
       // Find or create a guild record in the database
       const guildSettings = await models.Guild.findOrCreateGuild(interaction.guild.id);
       
@@ -207,7 +227,8 @@ module.exports = {
         channelName: channelName,
         description: description,
         modmailChannel: modmailChannelName,
-        enableModmail: enableModmail
+        enableModmail: enableModmail,
+        enableVerboseLogging: enableVerboseLogging
       });
       
       // Create the logging channel if it doesn't exist
@@ -301,13 +322,56 @@ module.exports = {
         }
       }
       
+      // Set up verbose logging channel if enabled
+      let verboseLoggingChannelId = null;
+      
+      if (enableVerboseLogging) {
+        try {
+          // Create a verbose logging channel
+          const verboseChannelName = `${channelName}-verbose`;
+          const verboseLoggingChannel = await interaction.guild.channels.create({
+            name: verboseChannelName,
+            type: ChannelType.GuildText,
+            topic: `${config.bot.name} - Verbose Logging Channel | All debug and detailed logs`,
+            reason: 'Monkey Bytes Logging System Setup - Verbose Logging'
+          });
+          
+          verboseLoggingChannelId = verboseLoggingChannel.id;
+          logger.info(`Created verbose logging channel ${verboseLoggingChannel.name} in ${interaction.guild.name}`);
+          
+          // Welcome message for verbose logging channel
+          const verboseWelcomeEmbed = createEmbed({
+            title: '🔍 Verbose Logging Channel',
+            description: 'This channel contains detailed debug logs and additional information about bot operations.',
+            fields: [
+              {
+                name: '⚠️ Warning',
+                value: 'This channel may receive a high volume of messages. It is recommended to mute notifications for this channel.'
+              },
+              {
+                name: '📋 Information',
+                value: 'Debug logs include detailed information about command execution, error states, and bot interactions.'
+              }
+            ],
+            color: '#808080', // Gray color for debug/verbose
+            timestamp: true
+          });
+          
+          await verboseLoggingChannel.send({ embeds: [verboseWelcomeEmbed] });
+        } catch (error) {
+          logger.error(`Error setting up verbose logging channel: ${error.message}`);
+        }
+      }
+      
       // Update the guild settings
       await guildSettings.update({
         loggingChannelId: loggingChannel.id,
         setupCompleted: true,
         modmailEnabled: enableModmail,
         modmailCategoryId: modmailCategoryId,
-        modmailInfoChannelId: modmailChannel?.id
+        modmailInfoChannelId: modmailChannel?.id,
+        verboseLoggingEnabled: enableVerboseLogging,
+        verboseLoggingChannelId: verboseLoggingChannelId
       });
       
       // Create the welcome embed for the logging channel
@@ -328,6 +392,19 @@ module.exports = {
           name: '📬 Modmail System',
           value: `The modmail system has been enabled. Check ${modmailChannel} for details on how it works.`
         });
+      }
+      
+      // Add verbose logging info to welcome embed if enabled
+      if (enableVerboseLogging && verboseLoggingChannelId) {
+        try {
+          const verboseChannel = await interaction.guild.channels.fetch(verboseLoggingChannelId);
+          welcomeEmbed.addFields({
+            name: '🔍 Verbose Logging',
+            value: `Verbose logging has been enabled. Check ${verboseChannel} for detailed debug logs.`
+          });
+        } catch (error) {
+          logger.error(`Error fetching verbose logging channel: ${error.message}`);
+        }
       }
       
       // Send the welcome message to the logging channel
@@ -372,6 +449,14 @@ module.exports = {
       let setupSuccessMessage = `Logging channel ${loggingChannel} has been set up!`;
       if (enableModmail) {
         setupSuccessMessage += `\nModmail system has been enabled in the ${modmailChannel} channel.`;
+      }
+      if (enableVerboseLogging && verboseLoggingChannelId) {
+        try {
+          const verboseChannel = await interaction.guild.channels.fetch(verboseLoggingChannelId);
+          setupSuccessMessage += `\nVerbose logging has been enabled in the ${verboseChannel} channel.`;
+        } catch (error) {
+          logger.error(`Error fetching verbose logging channel: ${error.message}`);
+        }
       }
       
       // Send the category selection message
@@ -497,6 +582,15 @@ module.exports = {
         .setPlaceholder('yes')
         .setRequired(false)
         .setMaxLength(3);
+        
+      // Add toggle for verbose logging
+      const verboseLoggingToggleInput = new TextInputBuilder()
+        .setCustomId('enableVerboseLogging')
+        .setLabel('Enable Verbose Logging? (yes/no)')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('no')
+        .setRequired(false)
+        .setMaxLength(3);
       
       // Pre-fill the modal with the existing data
       if (guildSettings.setupData.channelName) {
@@ -515,14 +609,19 @@ module.exports = {
         modmailToggleInput.setValue(guildSettings.setupData.enableModmail ? 'yes' : 'no');
       }
       
+      if (guildSettings.setupData.enableVerboseLogging !== undefined) {
+        verboseLoggingToggleInput.setValue(guildSettings.setupData.enableVerboseLogging ? 'yes' : 'no');
+      }
+      
       // Add the components to the modal
       const firstActionRow = new ActionRowBuilder().addComponents(channelNameInput);
       const secondActionRow = new ActionRowBuilder().addComponents(modmailChannelInput);
       const thirdActionRow = new ActionRowBuilder().addComponents(modmailToggleInput);
-      const fourthActionRow = new ActionRowBuilder().addComponents(descriptionInput);
+      const fourthActionRow = new ActionRowBuilder().addComponents(verboseLoggingToggleInput);
+      const fifthActionRow = new ActionRowBuilder().addComponents(descriptionInput);
       
       // Add inputs to the modal
-      modal.addComponents(firstActionRow, secondActionRow, thirdActionRow, fourthActionRow);
+      modal.addComponents(firstActionRow, secondActionRow, thirdActionRow, fourthActionRow, fifthActionRow);
       
       // Show the modal to continue from where they left off
       await interaction.showModal(modal);
@@ -576,15 +675,25 @@ module.exports = {
         .setPlaceholder('yes')
         .setRequired(false)
         .setMaxLength(3);
+        
+      // Add toggle for verbose logging
+      const verboseLoggingToggleInput = new TextInputBuilder()
+        .setCustomId('enableVerboseLogging')
+        .setLabel('Enable Verbose Logging? (yes/no)')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('no')
+        .setRequired(false)
+        .setMaxLength(3);
       
       // Add the components to the modal
       const firstActionRow = new ActionRowBuilder().addComponents(channelNameInput);
       const secondActionRow = new ActionRowBuilder().addComponents(modmailChannelInput);
       const thirdActionRow = new ActionRowBuilder().addComponents(modmailToggleInput);
-      const fourthActionRow = new ActionRowBuilder().addComponents(descriptionInput);
+      const fourthActionRow = new ActionRowBuilder().addComponents(verboseLoggingToggleInput);
+      const fifthActionRow = new ActionRowBuilder().addComponents(descriptionInput);
       
       // Add inputs to the modal
-      modal.addComponents(firstActionRow, secondActionRow, thirdActionRow, fourthActionRow);
+      modal.addComponents(firstActionRow, secondActionRow, thirdActionRow, fourthActionRow, fifthActionRow);
       
       // Update setup progress to step 1 (starting fresh)
       await guildSettings.updateSetupProgress(1);
@@ -607,6 +716,11 @@ module.exports = {
       // Add modmail info if enabled
       if (guildSettings.modmailEnabled) {
         successMessage += `\n\n📬 **Modmail System**\nThe modmail system is active. Users can send direct messages to the bot to contact staff. Staff can reply using \`/modmail reply\` in the modmail channels.`;
+      }
+      
+      // Add verbose logging info if enabled
+      if (guildSettings.verboseLoggingEnabled) {
+        successMessage += `\n\n🔍 **Verbose Logging**\nVerbose logging is enabled. Detailed debug logs will be sent to the verbose logging channel.`;
       }
       
       // Create final success embed
@@ -648,6 +762,22 @@ module.exports = {
               }
             } catch (error) {
               logger.error(`Error fetching modmail channel: ${error.message}`);
+            }
+          }
+          
+          // Add verbose logging field if enabled
+          if (guildSettings.verboseLoggingEnabled && guildSettings.verboseLoggingChannelId) {
+            try {
+              const verboseChannel = await interaction.guild.channels.fetch(guildSettings.verboseLoggingChannelId);
+              if (verboseChannel) {
+                fields.push({
+                  name: '🔍 Verbose Logging',
+                  value: `Verbose logging is enabled. Detailed debug information will be sent to ${verboseChannel}.`,
+                  inline: false
+                });
+              }
+            } catch (error) {
+              logger.error(`Error fetching verbose logging channel: ${error.message}`);
             }
           }
           
