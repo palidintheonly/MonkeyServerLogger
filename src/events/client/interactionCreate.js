@@ -120,7 +120,7 @@ module.exports = {
         }
       } else if (interaction.customId.startsWith('report_message_')) {
         // Message report modal from context menu
-        const reportCommand = client.contextCommands.get('Report Message');
+        const reportCommand = client.contextCommands.get('ReportMessage');
         if (reportCommand && reportCommand.handleModal) {
           try {
             await reportCommand.handleModal(interaction, client);
