@@ -19,48 +19,36 @@ logger.info(`Using token of length ${tokenLength}, starting with ${tokenFirstCha
 // Initialize REST API with token 
 const rest = new REST({ version: '10' }).setToken(token);
 
-// Custom function to calculate number of shards based on guild count
+// Function to determine shard count based on Discord's recommendations
 const calculateShardCount = async () => {
   try {
-    logger.info(`[SHARD MANAGER] Calculating shard count using token: ${token.substring(0, 5)}...`);
+    logger.info(`[SHARD MANAGER] Requesting recommended shard count from Discord...`);
     
-    // Try using a more direct approach
     try {
-      logger.info('[SHARD MANAGER] Attempting to get gateway bot info...');
-      // Get recommended shard count from Discord
-      const { shards: recommendedShards } = await rest.get(Routes.gatewayBot());
+      // Get recommended shard count from Discord's gateway endpoint
+      const gatewayInfo = await rest.get(Routes.gatewayBot());
+      const recommendedShards = gatewayInfo.shards || 1;
       
-      logger.info(`[SHARD MANAGER] Successfully retrieved gateway bot info: ${recommendedShards} recommended shards`);
+      logger.info(`[SHARD MANAGER] Discord recommends ${recommendedShards} shard(s)`);
       
-      // Get application information (includes guild count)
-      const appInfo = await rest.get(Routes.oauth2CurrentApplication());
-      const guildCount = appInfo.approximate_guild_count || 1;
-      
-      // Use 1 shard per guild as recommended by Discord
-      const customShards = guildCount;
-      
-      logger.info(`[SHARD MANAGER] Discord recommended ${recommendedShards} shards for ${guildCount} guilds`);
-      logger.info(`[SHARD MANAGER] Using 1:1 ratio: ${customShards} shards (1 shard per guild)`);
-      
-      return customShards;
+      // For small to medium bots, using Discord's recommendation is best practice
+      return recommendedShards;
     } catch (gatewayError) {
       logger.error('[SHARD MANAGER] Failed to get gateway bot info:', gatewayError);
       logger.warn('[SHARD MANAGER] Falling back to 1 shard due to API error');
       return 1; // Default to 1 shard if gateway info fails
     }
   } catch (error) {
-    logger.error('[SHARD MANAGER] Error calculating custom shard count:', error);
+    logger.error('[SHARD MANAGER] Error calculating shard count:', error);
     return 1; // Default to 1 shard if calculation fails
   }
 };
 
-// Create sharding manager with custom shard count (1 shard per guild)
+// Create basic sharding manager with Discord.js defaults
 const manager = new ShardingManager(path.join(__dirname, '../index.js'), {
-  token: token, // Use the token we validated above
-  respawn: true, // Automatically respawn crashed shards
-  shardArgs: ['--shard'],
-  spawnTimeout: 120000, // Increase timeout to 2 minutes (from default 30s)
-  respawnDelay: 10000, // Wait 10 seconds before respawning a shard
+  token: token,
+  respawn: true,
+  shardArgs: ['--shard']
 });
 
 // Shard events
@@ -130,23 +118,13 @@ module.exports = {
     logger.info('Starting sharding manager...');
     
     try {
-      // Calculate custom shard count
-      const customShardCount = await calculateShardCount();
-      logger.info(`Setting shard count to ${customShardCount} (1 shard per guild)`);
-      
-      // Override totalShards setting with our custom calculation
-      manager.totalShards = customShardCount;
-      
-      // Use retry mechanism with exponential backoff
-      await retry(async () => {
-        logger.info(`Attempting to spawn ${customShardCount} shards...`);
-        await manager.spawn();
-        logger.info('All shards spawned successfully');
-      }, 3, 10000); // Max 3 retries, starting with 10 second delay
-      
+      // Let Discord.js handle shard count automatically
+      logger.info('Spawning shards with automatic configuration...');
+      await manager.spawn();
+      logger.info('All shards spawned successfully');
       return true;
     } catch (error) {
-      logger.error('All retry attempts to spawn shards failed:', error);
+      logger.error('Failed to spawn shards:', error);
       logger.error('Error details:', error.message || 'Unknown error');
       return false;
     }

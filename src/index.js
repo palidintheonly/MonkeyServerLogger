@@ -6,8 +6,8 @@ const { logger } = require('./utils/logger');
 const { connectToDatabase } = require('./database/db');
 const config = require('./config');
 
-// Check if running as a shard or directly
-const isSharded = process.argv.includes('--shard');
+// This file is used both directly and by the sharding manager
+const isSharded = process.env.SHARDED === 'true' || process.argv.includes('--shard');
 
 // Create a new client instance
 const client = new Client({
@@ -20,9 +20,10 @@ const client = new Client({
     GatewayIntentBits.GuildModeration || GatewayIntentBits.GuildBans, // Fallback to GuildBans if GuildModeration is not available
     GatewayIntentBits.DirectMessages, // Required for DM modmail system
     GatewayIntentBits.DirectMessageReactions,
-    GatewayIntentBits.DirectMessageTyping
-  ],
-  shards: isSharded ? 'auto' : undefined,
+    GatewayIntentBits.DirectMessageTyping,
+    GatewayIntentBits.GuildPresences // Added for activity tracking
+  ]
+  // Let Discord.js Sharding Manager handle shard configuration
 });
 
 // Initialize collections

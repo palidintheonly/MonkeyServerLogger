@@ -13,10 +13,10 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "Discord Bot Server"
+args = "Simple Discord Bot"
 
 [[workflows.workflow]]
-name = "Discord Bot Server"
+name = "Simple Discord Bot"
 author = "agent"
 
 [workflows.workflow.metadata]
@@ -27,12 +27,17 @@ task = "packager.installForAll"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "npm install && node src/shard.js"
+args = "node simple-bot.js"
+waitForPort = 5000
 
 [deployment]
-run = ["sh", "-c", "npm install && node src/shard.js"]
+run = ["sh", "-c", "npm install && node bot.js"]
 deploymentTarget = "gce"
 
 [[ports]]
 localPort = 3000
 externalPort = 80
+
+[[ports]]
+localPort = 5000
+externalPort = 5000
