@@ -7,6 +7,15 @@ if (!process.env.DISCORD_BOT_TOKEN && !process.env.TOKEN) {
   console.error('ERROR: Missing required environment variables! Please set DISCORD_BOT_TOKEN in your environment.');
   process.exit(1);
 }
+
+// Attempt to validate token format
+const token = process.env.DISCORD_BOT_TOKEN || process.env.TOKEN;
+if (token && (token.split('.').length !== 3)) {
+  console.error('CRITICAL ERROR: Token format appears to be invalid! Discord tokens should contain exactly 3 segments separated by periods.');
+  console.error('This suggests the bot token may have been reset or revoked in the Discord Developer Portal.');
+  console.error('Please check your token in the Replit Secrets tab or obtain a new token from the Discord Developer Portal.');
+  console.error('Running in offline mode to prevent further errors...');
+}
 const fs = require('fs');
 const path = require('path');
 const { logger } = require('./src/utils/logger');
