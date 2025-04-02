@@ -237,8 +237,10 @@ async function registerCommands() {
       logger.info('Guild-specific command registration complete.');
     }
   } catch (error) {
-    logger.error('Error during command registration:', error);
-    logger.error('Error details:', error.rawError?.errors || error.message || 'Unknown error');
+    logger.safeError('Error during command registration', error);
+    if (error.rawError?.errors) {
+      logger.safeError('Error details', error.rawError.errors);
+    }
   }
 }
 
@@ -291,17 +293,14 @@ async function init() {
     // Register events
     registerEvents();
     
-    // Debug token state - safely mask most of the token
+    // Check token availability
     const token = process.env.DISCORD_BOT_TOKEN || process.env.TOKEN;
     if (!token) {
       logger.error('No Discord bot token found in environment variables (checked DISCORD_BOT_TOKEN and TOKEN)!');
       process.exit(1);
     }
     
-    const tokenLength = token.length;
-    const tokenFirstChars = token.substring(0, 5);
-    const tokenLastChars = token.substring(tokenLength - 5);
-    logger.info(`Using token of length ${tokenLength}, starting with ${tokenFirstChars}... and ending with ...${tokenLastChars}`);
+    logger.info('Discord bot token found in environment variables');
     
     // Check for client ID
     const clientId = process.env.DISCORD_APPLICATION_ID || process.env.CLIENT_ID;
@@ -320,25 +319,24 @@ async function init() {
       await client.login(token);
       logger.info('Successfully logged in to Discord!');
     } catch (loginError) {
-      logger.error('Failed to log in to Discord:', loginError);
-      logger.error('Login error details:', loginError.message);
+      logger.safeError('Failed to log in to Discord', loginError);
       throw loginError;
     }
     
     logger.info('Bot initialization completed');
   } catch (error) {
-    logger.error('Error during bot initialization:', error);
+    logger.safeError('Error during bot initialization', error);
     process.exit(1);
   }
 }
 
 // Handle errors
 process.on('unhandledRejection', error => {
-  logger.error('Unhandled promise rejection:', error);
+  logger.safeError('Unhandled promise rejection', error);
 });
 
 process.on('uncaughtException', error => {
-  logger.error('Uncaught exception:', error);
+  logger.safeError('Uncaught exception', error);
   process.exit(1);
 });
 
@@ -387,7 +385,7 @@ if (shouldRunHttpServer) {
           logger.warn(`Port ${port} is already in use, trying next port...`);
           tryPort(port + 1);
         } else {
-          logger.error(`Server error:`, err);
+          logger.safeError(`Server error`, err);
         }
       });
       
@@ -404,7 +402,7 @@ if (shouldRunHttpServer) {
     // Handle other HTTP server errors that might occur after listening
     server.on('error', (error) => {
       if (error.code !== 'EADDRINUSE') { // EADDRINUSE is already handled in tryPort
-        logger.error('HTTP server error:', error);
+        logger.safeError('HTTP server error', error);
       }
     });
   });

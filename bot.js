@@ -1,6 +1,12 @@
 // Main entry point for the Discord bot with enhanced features
 require('dotenv').config();
 const { Client, GatewayIntentBits, Collection, REST, Routes, Events } = require('discord.js');
+
+// Check if required environment variables are set
+if (!process.env.DISCORD_BOT_TOKEN && !process.env.TOKEN) {
+  console.error('ERROR: Missing required environment variables! Please set DISCORD_BOT_TOKEN in your environment.');
+  process.exit(1);
+}
 const fs = require('fs');
 const path = require('path');
 const { logger } = require('./src/utils/logger');
@@ -123,6 +129,11 @@ async function registerCommands() {
     process.exit(1);
   }
   
+  // Log token existence without exposing it
+  logger.info(`Token available: ${!!token}, Token length: ${token ? token.length : 0}`);
+  logger.info(`Client ID available: ${!!clientId}, Client ID: ${clientId}`);
+  
+  
   const rest = new REST().setToken(token);
   
   try {
@@ -135,7 +146,7 @@ async function registerCommands() {
     
     logger.info(`Successfully reloaded ${data.length} application commands`);
   } catch (error) {
-    logger.error('Error registering commands:', error);
+    logger.safeError('Error registering commands', error);
   }
 }
 
@@ -194,7 +205,15 @@ async function init() {
     
     // Login to Discord
     const token = process.env.DISCORD_BOT_TOKEN || process.env.TOKEN;
-    await client.login(token);
+    logger.info(`[Init] Token available: ${!!token}, Token length: ${token ? token.length : 0}`);
+    
+    try {
+      await client.login(token);
+      logger.info('Successfully authenticated with Discord');
+    } catch (error) {
+      logger.safeError('Discord authentication failed', error);
+      process.exit(1);
+    }
     
     // Initialize activeLoaders collection for tracking loading indicators
     client.activeLoaders = new Collection();
@@ -208,7 +227,7 @@ async function init() {
     
     logger.info('Bot initialization completed');
   } catch (error) {
-    logger.error('Error during bot initialization:', error);
+    logger.safeError('Error during bot initialization', error);
     process.exit(1);
   }
 }

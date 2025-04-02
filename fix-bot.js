@@ -462,11 +462,8 @@ if (!token) {
   process.exit(1);
 }
 
-// Safely mask token in logs
-const tokenLength = token.length;
-const tokenFirstChars = token.substring(0, 5);
-const tokenLastChars = token.substring(tokenLength - 5);
-logger.info(`Using token of length ${tokenLength}, starting with ${tokenFirstChars}... and ending with ...${tokenLastChars}`);
+// Don't log token information at all for security
+logger.info('Discord bot token loaded from environment variables');
 
 // Connect to database first
 logger.info('Connecting to database...');
@@ -477,12 +474,12 @@ connectToDatabase()
     return client.login(token);
   })
   .catch(dbError => {
-    logger.error('Failed to connect to database:', dbError);
+    logger.safeError('Failed to connect to database', dbError);
     // Continue with Discord login even if database fails
     logger.info('Attempting to connect to Discord despite database error...');
     return client.login(token);
   })
   .catch(error => {
-    logger.error('Failed to log in to Discord:', error);
+    logger.safeError('Failed to log in to Discord', error);
     process.exit(1);
   });
