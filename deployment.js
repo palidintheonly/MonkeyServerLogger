@@ -2,6 +2,7 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, ActivityType } = require('discord.js');
 const { logger } = require('./src/utils/logger');
+const { formatTimeGMT, formatUptime } = require('./src/utils/timeUtils');
 const http = require('http');
 const express = require('express');
 const session = require('express-session');
@@ -291,7 +292,7 @@ app.get('/logout', (req, res) => {
 
 // Admin dashboard route (requires owner)
 app.get('/admin', isOwner, (req, res) => {
-  const uptime = Math.floor(client.uptime / 1000);
+  // Using formatUptime directly with client.uptime
   res.send(`
     <html>
       <head>
@@ -421,7 +422,7 @@ app.get('/admin', isOwner, (req, res) => {
             </div>
             <div class="stat-card">
               <h3>Uptime</h3>
-              <div class="stat-value">${Math.floor(uptime / 86400)}d ${Math.floor((uptime % 86400) / 3600)}h</div>
+              <div class="stat-value">${formatUptime(client.uptime)}</div>
             </div>
           </div>
           
@@ -449,7 +450,7 @@ app.get('/', isAuthenticated, (req, res) => {
     return res.redirect('/admin');
   }
   
-  const uptime = Math.floor(client.uptime / 1000);
+  // Using formatUptime directly with client.uptime
   res.send(`
     <html>
       <head>
@@ -536,7 +537,8 @@ app.get('/', isAuthenticated, (req, res) => {
             <div class="info">
               <p><strong>Bot Name:</strong> ${client.user ? client.user.tag : 'Connecting...'}</p>
               <p><strong>Servers:</strong> ${client.guilds.cache.size}</p>
-              <p><strong>Uptime:</strong> ${Math.floor(uptime / 86400)}d ${Math.floor((uptime % 86400) / 3600)}h ${Math.floor((uptime % 3600) / 60)}m ${uptime % 60}s</p>
+              <p><strong>Uptime:</strong> ${formatUptime(client.uptime)}</p>
+              <p><strong>Server Time:</strong> ${formatTimeGMT(new Date())}</p>
               <p><strong>Commands:</strong> ${commands.length}</p>
             </div>
           </div>
@@ -558,6 +560,8 @@ app.get('/status', (req, res) => {
     status: 'online',
     bot: client.user ? client.user.tag : 'connecting',
     uptime: client.uptime,
+    uptime_formatted: formatUptime(client.uptime),
+    server_time: formatTimeGMT(new Date()),
     servers: client.guilds.cache.size,
     commands: commands.length
   });
@@ -565,7 +569,7 @@ app.get('/status', (req, res) => {
 
 // Public status HTML page (doesn't require login)
 app.get('/public', (req, res) => {
-  const uptime = Math.floor(client.uptime / 1000);
+  // Using formatUptime directly with client.uptime
   res.send(`
     <html>
       <head>
@@ -619,7 +623,8 @@ app.get('/public', (req, res) => {
           <div class="info">
             <p><strong>Bot Name:</strong> ${client.user ? client.user.tag : 'Connecting...'}</p>
             <p><strong>Servers:</strong> ${client.guilds.cache.size}</p>
-            <p><strong>Uptime:</strong> ${Math.floor(uptime / 86400)}d ${Math.floor((uptime % 86400) / 3600)}h ${Math.floor((uptime % 3600) / 60)}m ${uptime % 60}s</p>
+            <p><strong>Uptime:</strong> ${formatUptime(client.uptime)}</p>
+            <p><strong>Server Time:</strong> ${formatTimeGMT(new Date())}</p>
             <p><strong>Commands:</strong> ${commands.length}</p>
           </div>
           <p>This is the public status page for The Royal Court Herald Discord bot.</p>
