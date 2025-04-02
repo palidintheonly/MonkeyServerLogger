@@ -37,26 +37,10 @@ const server = http.createServer((req, res) => {
   res.end('Discord bot is running!');
 });
 
-// Try multiple ports in case the default is in use
-const tryPort = (port) => {
-  server.once('error', err => {
-    if (err.code === 'EADDRINUSE') {
-      logger.warn(`Port ${port} is already in use, trying next port...`);
-      tryPort(port + 1);
-    } else {
-      logger.error(`Server error:`, err);
-    }
-  });
-  
-  server.once('listening', () => {
-    const address = server.address();
-    logger.info(`Health check server running on port ${address.port}`);
-  });
-  
-  server.listen(port, '0.0.0.0');
-};
-
-tryPort(9090); // Start with port 9090 which should be available
+// Listen on port 3000 for health checks
+server.listen(3000, '0.0.0.0', () => {
+  logger.info('Health check server running on port 3000');
+});
 
 // Command registration function
 async function registerCommands() {
