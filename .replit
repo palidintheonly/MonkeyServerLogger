@@ -30,5 +30,9 @@ task = "shell.exec"
 args = "npm install && node src/shard.js"
 
 [deployment]
-run = ["sh", "-c", "npm install && node src/index.js"]
+run = ["sh", "-c", "npm install && node src/shard.js"]
 deploymentTarget = "gce"
+
+[[ports]]
+localPort = 3000
+externalPort = 80
