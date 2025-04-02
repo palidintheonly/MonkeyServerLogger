@@ -74,8 +74,21 @@ module.exports = {
       const command = client.contextCommands.get(interaction.commandName);
       
       if (!command) {
-        logger.warn(`Context command ${interaction.commandName} not found`);
-        return;
+        logger.warn(`Context command ${interaction.commandName} not found in contextCommands collection. Checking main commands collection as fallback...`);
+        // Try to find in regular commands as fallback
+        const fallbackCommand = client.commands.get(interaction.commandName);
+        if (!fallbackCommand) {
+          logger.error(`Context command ${interaction.commandName} not found in any command collection`);
+          return;
+        }
+        logger.info(`Found context command in main commands collection: ${interaction.commandName}`);
+        try {
+          await fallbackCommand.execute(interaction, client);
+          return;
+        } catch (error) {
+          logger.error(`Error executing fallback context command ${interaction.commandName}:`, error);
+          return;
+        }
       }
       
       try {
@@ -130,6 +143,23 @@ module.exports = {
               embeds: [createErrorEmbed('There was an error processing your report!')],
               ephemeral: true
             });
+          }
+        } else {
+          // Try to find in regular commands as fallback
+          logger.warn('ReportMessage not found in contextCommands, checking main commands...');
+          const fallbackReportCommand = client.commands.get('ReportMessage');
+          if (fallbackReportCommand && fallbackReportCommand.handleModal) {
+            try {
+              await fallbackReportCommand.handleModal(interaction, client);
+            } catch (error) {
+              logger.error(`Error handling report modal submission from fallback: ${error.message}`);
+              await interaction.reply({
+                embeds: [createErrorEmbed('There was an error processing your report!')],
+                ephemeral: true
+              });
+            }
+          } else {
+            logger.error('ReportMessage command not found in any command collection');
           }
         }
       } else if (interaction.customId.startsWith('modmail_reply_')) {
