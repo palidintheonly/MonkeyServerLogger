@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { logger } = require('./src/utils/logger');
 const { connectToDatabase } = require('./src/database/db');
+const http = require('http');
 
 // Setup client with appropriate intents
 const client = new Client({
@@ -29,24 +30,15 @@ client.cooldowns = new Collection();
 client.activeModmailThreads = new Map();
 client.blockedModmailUsers = new Set();
 
-// Error handling
-process.on('unhandledRejection', error => {
-  logger.error('Unhandled promise rejection:', error);
+// Create HTTP server for health checks
+const server = http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.end('Discord bot is running!');
 });
 
-process.on('uncaughtException', error => {
-  logger.error('Uncaught exception:', error);
-});
-
-// Graceful shutdown
-process.on('SIGINT', () => {
-  logger.info('Received SIGINT signal. Shutting down gracefully...');
-  process.exit(0);
-});
-
-process.on('SIGTERM', () => {
-  logger.info('Received SIGTERM signal. Shutting down gracefully...');
-  process.exit(0);
+// Listen on port 3000 (mapped to external port 80)
+server.listen(3000, '0.0.0.0', () => {
+  logger.info('Health check server running on port 3000');
 });
 
 // Command registration function
@@ -183,22 +175,6 @@ function registerEvents() {
   }
 }
 
-// Health check server
-function startHealthServer() {
-  const http = require('http');
-  const server = http.createServer((req, res) => {
-    res.writeHead(200);
-    res.end('Discord bot is running!');
-  });
-  
-  server.listen(5000, '0.0.0.0', () => {
-    logger.info('Health check server running on port 5000');
-  });
-  
-  server.on('error', (error) => {
-    logger.error('HTTP server error:', error);
-  });
-}
 
 // Main initialization function
 async function init() {
@@ -218,11 +194,6 @@ async function init() {
     // Login to Discord
     const token = process.env.DISCORD_BOT_TOKEN || process.env.TOKEN;
     await client.login(token);
-    
-    // Start HTTP health check server
-    client.once(Events.ClientReady, () => {
-      startHealthServer();
-    });
     
     logger.info('Bot initialization completed');
   } catch (error) {
