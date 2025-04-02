@@ -4,7 +4,7 @@ modules = ["nodejs-20"]
 channel = "stable-24_05"
 
 [workflows]
-runButton = "Full Discord Bot"
+runButton = "Project"
 
 [[workflows.workflow]]
 name = "Project"
@@ -28,6 +28,7 @@ task = "packager.installForAll"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "node bot.js"
+waitForPort = 3000
 
 [deployment]
 run = ["sh", "-c", "node bot.js"]
