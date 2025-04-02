@@ -507,6 +507,14 @@ client.on('interactionCreate', async interaction => {
           logger.info(`Stats command completed for ${interaction.user.tag}`);
           break;
           
+        case 'setup':
+          logger.info(`Executing setup command for ${interaction.user.tag}`);
+          await interaction.reply({
+            content: "The setup command is available in the full bot version.\n\nPlease run the main bot.js instead using `node bot.js` to access the complete functionality including server setup, logging, and modmail features.",
+            ephemeral: true
+          });
+          break;
+        
         default:
           logger.warn(`Unknown command received: ${commandName}`);
           await interaction.reply({ 
@@ -529,31 +537,410 @@ client.on('interactionCreate', async interaction => {
   } else if (interaction.isButton()) {
     // Handle button interactions
     logger.info(`Button interaction: ${interaction.customId} by ${interaction.user.tag}`);
-    await interaction.reply({ 
-      content: 'Button interactions are not implemented yet!', 
-      flags: { ephemeral: true }
-    });
+    
+    try {
+      if (interaction.customId.startsWith('help-')) {
+        // Handle help button interactions
+        const section = interaction.customId.split('-')[1];
+        
+        const helpEmbed = {
+          title: '🤖 The Royal Court Bot - Help Menu',
+          color: 0x5865F2
+        };
+        
+        switch (section) {
+          case 'main':
+            helpEmbed.description = 'Here are all the available commands:';
+            helpEmbed.fields = [
+              {
+                name: '📊 Information Commands',
+                value: '`/ping`, `/info`, `/help`, etc.'
+              },
+              {
+                name: '⚙️ Setup & Management',
+                value: 'These commands are available in the full bot version.'
+              }
+            ];
+            break;
+            
+          case 'management':
+            helpEmbed.description = 'Management commands help:';
+            helpEmbed.fields = [{
+              name: 'Note',
+              value: 'Management commands are only available in the full bot version. Please use the main bot.js for complete functionality.'
+            }];
+            break;
+            
+          default:
+            helpEmbed.description = 'This help section is only available in the full bot version.';
+        }
+        
+        await interaction.reply({ embeds: [helpEmbed], ephemeral: true });
+        return;
+      }
+      
+      // Default response for other buttons
+      await interaction.reply({ 
+        content: 'This button interaction is only available in the full bot version. Please use the main bot.js for complete functionality.', 
+        flags: { ephemeral: true }
+      });
+    } catch (error) {
+      logger.error(`Error handling button interaction: ${error.message}`);
+      await interaction.reply({ 
+        content: 'There was an error processing this button interaction.', 
+        flags: { ephemeral: true }
+      });
+    }
   } else if (interaction.isStringSelectMenu()) {
     // Handle select menu interactions
     logger.info(`Select menu interaction: ${interaction.customId} by ${interaction.user.tag}`);
-    await interaction.reply({ 
-      content: 'Select menu interactions are not implemented yet!', 
-      flags: { ephemeral: true }
-    });
+    
+    try {
+      if (interaction.customId === 'help-categories') {
+        // Handle help category selection
+        const selectedCategory = interaction.values[0];
+        
+        const helpEmbed = {
+          title: '🤖 The Royal Court Bot - Help',
+          color: 0x5865F2,
+          footer: {
+            text: 'Need more help? Join our support server!'
+          }
+        };
+        
+        // Build help content based on selection
+        switch (selectedCategory) {
+          case 'general':
+            helpEmbed.description = '**General Commands**\n\nThese commands provide basic information about the bot.';
+            helpEmbed.fields = [
+              {
+                name: '/ping',
+                value: 'Check the bot\'s response time and latency.'
+              },
+              {
+                name: '/info',
+                value: 'Get information about the bot.'
+              },
+              {
+                name: '/help',
+                value: 'Display this help menu.'
+              }
+            ];
+            break;
+            
+          case 'setup':
+            helpEmbed.description = '**Setup Information**\n\nComplete functionality is available in the main bot version.';
+            helpEmbed.fields = [
+              {
+                name: 'Server Setup',
+                value: 'Configure logging channels, permissions and more with the full version of the bot.'
+              }
+            ];
+            break;
+            
+          case 'moderation':
+            helpEmbed.description = '**Moderation Commands**\n\nComplete functionality is available in the main bot version.';
+            helpEmbed.fields = [
+              {
+                name: 'Moderation Tools',
+                value: 'Advanced moderation features are available in the full version of the bot.'
+              }
+            ];
+            break;
+            
+          default:
+            helpEmbed.description = 'Please select a valid help category.';
+        }
+        
+        // Create a new row of buttons for navigation
+        const row = {
+          type: 1,
+          components: [
+            {
+              type: 2,
+              style: 2,
+              label: 'Back to Main Menu',
+              custom_id: 'help-main',
+              emoji: {
+                name: '🔙'
+              }
+            }
+          ]
+        };
+        
+        await interaction.reply({ 
+          embeds: [helpEmbed], 
+          components: [row], 
+          ephemeral: true 
+        });
+      } else if (interaction.customId.startsWith('logs-')) {
+        await interaction.reply({
+          content: 'Logging configuration is only available in the full bot version. Please use the main bot.js for complete functionality.',
+          ephemeral: true
+        });
+      } else if (interaction.customId.startsWith('setup-')) {
+        await interaction.reply({
+          content: 'Setup configuration is only available in the full bot version. Please use the main bot.js for complete functionality.',
+          ephemeral: true
+        });
+      } else {
+        // Default response for other select menus
+        await interaction.reply({ 
+          content: 'This select menu interaction is only available in the full bot version. Please use the main bot.js for complete functionality.', 
+          ephemeral: true 
+        });
+      }
+    } catch (error) {
+      logger.error(`Error handling select menu interaction: ${error.message}`);
+      await interaction.reply({ 
+        content: 'There was an error processing this selection.', 
+        ephemeral: true 
+      });
+    }
   } else if (interaction.isModalSubmit()) {
     // Handle modal submissions
     logger.info(`Modal submission: ${interaction.customId} by ${interaction.user.tag}`);
-    await interaction.reply({ 
-      content: 'Modal submissions are not implemented yet!', 
-      flags: { ephemeral: true }
-    });
+    
+    try {
+      // Handle different modal types based on customId
+      if (interaction.customId === 'reportModal') {
+        // This is for the report message modal
+        const reportReason = interaction.fields.getTextInputValue('reportReason');
+        const reportDetails = interaction.fields.getTextInputValue('reportDetails');
+        
+        logger.info(`Received report from ${interaction.user.tag}: ${reportReason}`);
+        
+        // Create an embed for the report
+        const reportEmbed = {
+          title: '📝 Message Report',
+          color: 0xf44336, // Red color for reports
+          description: 'Your report has been received and will be reviewed by server moderators.',
+          fields: [
+            {
+              name: 'Reason',
+              value: reportReason || 'No reason provided'
+            },
+            {
+              name: 'Details',
+              value: reportDetails || 'No details provided'
+            }
+          ],
+          footer: {
+            text: `Reported by ${interaction.user.tag}`
+          },
+          timestamp: new Date()
+        };
+        
+        await interaction.reply({ embeds: [reportEmbed], ephemeral: true });
+      } else if (interaction.customId.startsWith('feedback-')) {
+        // Handle feedback modals
+        const feedbackText = interaction.fields.getTextInputValue('feedbackText');
+        
+        logger.info(`Received feedback from ${interaction.user.tag}`);
+        
+        // Create an embed for feedback confirmation
+        const feedbackEmbed = {
+          title: '📋 Feedback Received',
+          color: 0x4caf50, // Green for confirmation
+          description: 'Thank you for your feedback! Your input helps us improve the bot.',
+          fields: [
+            {
+              name: 'Your Feedback',
+              value: feedbackText || 'No feedback provided'
+            }
+          ],
+          footer: {
+            text: `From ${interaction.user.tag}`
+          },
+          timestamp: new Date()
+        };
+        
+        await interaction.reply({ embeds: [feedbackEmbed], ephemeral: true });
+      } else if (interaction.customId.startsWith('modmail-')) {
+        // Handle modmail modals - just provide a placeholder response
+        const messageContent = interaction.fields.getTextInputValue('messageContent');
+        
+        logger.info(`Received modmail message from ${interaction.user.tag}`);
+        
+        const modmailEmbed = {
+          title: '📫 Modmail Message',
+          color: 0x2196f3, // Blue for modmail
+          description: 'Your message has been sent to the server moderators.',
+          fields: [
+            {
+              name: 'Your Message',
+              value: messageContent || 'No message content'
+            }
+          ],
+          footer: {
+            text: 'Please note: This is a simplified version of modmail. Full functionality is available in the main bot.'
+          },
+          timestamp: new Date()
+        };
+        
+        await interaction.reply({ embeds: [modmailEmbed], ephemeral: true });
+      } else {
+        // Default response for other modal types
+        await interaction.reply({ 
+          content: 'This modal submission is only fully supported in the main bot version. Please use the main bot.js for complete functionality.', 
+          ephemeral: true 
+        });
+      }
+    } catch (error) {
+      logger.error(`Error handling modal submission: ${error.message}`);
+      await interaction.reply({ 
+        content: 'There was an error processing your submission. Please try again later.', 
+        ephemeral: true 
+      });
+    }
   } else if (interaction.isContextMenuCommand()) {
     // Handle context menu commands
     logger.info(`Context menu command: ${interaction.commandName} by ${interaction.user.tag}`);
-    await interaction.reply({ 
-      content: 'Context menu commands are not implemented yet!', 
-      flags: { ephemeral: true }
-    });
+    
+    try {
+      if (interaction.commandName === 'User Info') {
+        // Handle user info context command
+        const targetUser = interaction.targetUser;
+        
+        // Calculate join date and creation date
+        const joinDate = interaction.targetMember ? interaction.targetMember.joinedAt : null;
+        const creationDate = targetUser.createdAt;
+        
+        // Get time ago string
+        const getTimeAgo = (date) => {
+          const now = new Date();
+          const diffInSeconds = Math.floor((now - date) / 1000);
+          
+          if (diffInSeconds < 60) return `${diffInSeconds} seconds ago`;
+          
+          const diffInMinutes = Math.floor(diffInSeconds / 60);
+          if (diffInMinutes < 60) return `${diffInMinutes} minutes ago`;
+          
+          const diffInHours = Math.floor(diffInMinutes / 60);
+          if (diffInHours < 24) return `${diffInHours} hours ago`;
+          
+          const diffInDays = Math.floor(diffInHours / 24);
+          if (diffInDays < 30) return `${diffInDays} days ago`;
+          
+          const diffInMonths = Math.floor(diffInDays / 30);
+          if (diffInMonths < 12) return `${diffInMonths} months ago`;
+          
+          const diffInYears = Math.floor(diffInMonths / 12);
+          return `${diffInYears} years ago`;
+        };
+        
+        // Format dates for display
+        const formatDate = (date) => {
+          if (!date) return 'Unknown';
+          return `${date.toLocaleDateString()} at ${date.toLocaleTimeString()} (${getTimeAgo(date)})`;
+        };
+        
+        const userInfoEmbed = {
+          title: `User Information: ${targetUser.username}`,
+          color: 0x3498db,
+          thumbnail: {
+            url: targetUser.displayAvatarURL({ dynamic: true, size: 128 })
+          },
+          fields: [
+            {
+              name: 'User ID',
+              value: targetUser.id,
+              inline: true
+            },
+            {
+              name: 'Account Created',
+              value: formatDate(creationDate),
+              inline: false
+            }
+          ],
+          footer: {
+            text: `Requested by ${interaction.user.tag}`
+          },
+          timestamp: new Date()
+        };
+        
+        // Add joined server date if available
+        if (joinDate) {
+          userInfoEmbed.fields.push({
+            name: 'Joined Server',
+            value: formatDate(joinDate),
+            inline: false
+          });
+        }
+        
+        // Add roles if available
+        if (interaction.targetMember && interaction.targetMember.roles.cache.size > 1) {
+          const roles = interaction.targetMember.roles.cache
+            .filter(role => role.id !== interaction.guild.id) // Filter out @everyone role
+            .map(role => `<@&${role.id}>`)
+            .join(', ');
+            
+          if (roles) {
+            userInfoEmbed.fields.push({
+              name: 'Roles',
+              value: roles.length > 1024 ? 'Too many roles to display' : roles,
+              inline: false
+            });
+          }
+        }
+        
+        await interaction.reply({
+          embeds: [userInfoEmbed],
+          ephemeral: true
+        });
+      } else if (interaction.commandName === 'Report Message') {
+        // Create a modal for reporting the message
+        const modal = {
+          title: "Report Message",
+          custom_id: "reportModal",
+          components: [
+            {
+              type: 1,
+              components: [
+                {
+                  type: 4,
+                  custom_id: "reportReason",
+                  label: "Reason for Report",
+                  style: 1,
+                  min_length: 5,
+                  max_length: 100,
+                  placeholder: "Explain why you're reporting this message",
+                  required: true
+                }
+              ]
+            },
+            {
+              type: 1,
+              components: [
+                {
+                  type: 4,
+                  custom_id: "reportDetails",
+                  label: "Additional Details",
+                  style: 2,
+                  min_length: 10,
+                  max_length: 1000,
+                  placeholder: "Provide any additional context or details about this report",
+                  required: true
+                }
+              ]
+            }
+          ]
+        };
+        
+        await interaction.showModal(modal);
+      } else {
+        await interaction.reply({ 
+          content: 'This context menu command is only fully supported in the main bot version. Please use the main bot.js for complete functionality.', 
+          ephemeral: true 
+        });
+      }
+    } catch (error) {
+      logger.error(`Error handling context menu command: ${error.message}`);
+      await interaction.reply({ 
+        content: 'There was an error processing this command. Please try again later.', 
+        ephemeral: true 
+      });
+    }
   }
 });
 

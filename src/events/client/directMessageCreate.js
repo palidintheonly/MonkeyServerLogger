@@ -397,8 +397,162 @@ module.exports = {
    * @param {Object} client - Discord client instance
    */
   setupAutoCloseTimer(userId, client) {
-    // Export this method for external access
-    module.exports.setupAutoCloseTimer = this.setupAutoCloseTimer;
+    const threadInfo = client.activeModmailThreads.get(userId);
+    if (!threadInfo) return;
+    
+    // Clear any existing timer
+    if (threadInfo.autoCloseTimer) {
+      clearTimeout(threadInfo.autoCloseTimer);
+    }
+    
+    // Auto-close after 24 hours of inactivity
+    const idleTimeout = 24 * 60 * 60 * 1000; // 24 hours
+    
+    threadInfo.autoCloseTimer = setTimeout(async () => {
+      try {
+        const guild = client.guilds.cache.get(threadInfo.guildId);
+        if (!guild) return;
+        
+        const threadChannel = await guild.channels.fetch(threadInfo.channelId).catch(() => null);
+        if (!threadChannel) {
+          // Channel no longer exists, remove thread from tracking
+          client.activeModmailThreads.delete(userId);
+          return;
+        }
+        
+        // Close the thread
+        await threadChannel.send({
+          embeds: [
+            createEmbed({
+              title: '🔒 Thread Auto-Closed',
+              description: 'This modmail thread has been automatically closed due to 24 hours of inactivity.',
+              color: '#FF5555',
+              timestamp: true
+            })
+          ]
+        });
+        
+        // Archive or rename the channel
+        await threadChannel.setName(`closed-${threadChannel.name}`);
+        
+        // Remove from active threads
+        client.activeModmailThreads.delete(userId);
+        
+        logger.info(`Auto-closed modmail thread for ${threadInfo.userName} after 24 hours of inactivity.`);
+      } catch (error) {
+        logger.error(`Error auto-closing modmail thread: ${error.message}`);
+      }
+    }, idleTimeout);
+    
+    // Set warning timers (30 minutes and 10 minutes before closing)
+    this.setWarningTimers(userId, client, idleTimeout);
+  },
+  
+  /**
+   * Set warning timers for modmail thread auto-close
+   * @param {String} userId - User ID associated with the thread
+   * @param {Object} client - Discord client instance
+   * @param {Number} idleTimeout - Total idle timeout in milliseconds
+   */
+  setWarningTimers(userId, client, idleTimeout) {
+    const threadInfo = client.activeModmailThreads.get(userId);
+    if (!threadInfo) return;
+    
+    // Reset warning flags
+    threadInfo.warningsSent = {
+      thirty: false,
+      ten: false
+    };
+    
+    // Thirty minute warning
+    setTimeout(async () => {
+      try {
+        // Check if thread still exists and hasn't had activity
+        const currentInfo = client.activeModmailThreads.get(userId);
+        if (!currentInfo || currentInfo.warningsSent.thirty) return;
+        
+        const guild = client.guilds.cache.get(currentInfo.guildId);
+        if (!guild) return;
+        
+        const threadChannel = await guild.channels.fetch(currentInfo.channelId).catch(() => null);
+        if (!threadChannel) return;
+        
+        // Send warning
+        await threadChannel.send({
+          embeds: [
+            createEmbed({
+              title: '⚠️ Inactivity Warning',
+              description: 'This modmail thread will be automatically closed in 30 minutes due to inactivity.',
+              color: '#FFA500',
+              timestamp: true
+            })
+          ]
+        });
+        
+        // Mark warning as sent
+        currentInfo.warningsSent.thirty = true;
+      } catch (error) {
+        logger.error(`Error sending 30-minute warning: ${error.message}`);
+      }
+    }, idleTimeout - (30 * 60 * 1000)); // 30 minutes before timeout
+    
+    // Ten minute warning
+    setTimeout(async () => {
+      try {
+        // Check if thread still exists and hasn't had activity
+        const currentInfo = client.activeModmailThreads.get(userId);
+        if (!currentInfo || currentInfo.warningsSent.ten) return;
+        
+        const guild = client.guilds.cache.get(currentInfo.guildId);
+        if (!guild) return;
+        
+        const threadChannel = await guild.channels.fetch(currentInfo.channelId).catch(() => null);
+        if (!threadChannel) return;
+        
+        // Send warning
+        await threadChannel.send({
+          embeds: [
+            createEmbed({
+              title: '⚠️ Final Warning',
+              description: 'This modmail thread will be automatically closed in 10 minutes due to inactivity.',
+              color: '#FF5555',
+              timestamp: true
+            })
+          ]
+        });
+        
+        // Mark warning as sent
+        currentInfo.warningsSent.ten = true;
+      } catch (error) {
+        logger.error(`Error sending 10-minute warning: ${error.message}`);
+      }
+    }, idleTimeout - (10 * 60 * 1000)); // 10 minutes before timeout
+  },
+  
+  /**
+   * Reset auto-close timer for a modmail thread
+   * @param {String} userId - User ID associated with the thread
+   * @param {Object} client - Discord client instance
+   */
+  resetAutoCloseTimer(userId, client) {
+    const threadInfo = client.activeModmailThreads.get(userId);
+    if (!threadInfo) return;
+    
+    // Clear existing timer
+    if (threadInfo.autoCloseTimer) {
+      clearTimeout(threadInfo.autoCloseTimer);
+      threadInfo.autoCloseTimer = null;
+    }
+    
+    // Reset warning flags
+    threadInfo.warningsSent = {
+      thirty: false,
+      ten: false
+    };
+  }
+};
+
+// Export the processModmail function for external accesse.exports.setupAutoCloseTimer = this.setupAutoCloseTimer;
     const threadInfo = client.activeModmailThreads.get(userId);
     if (!threadInfo) return;
     
