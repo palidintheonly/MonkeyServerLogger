@@ -62,7 +62,7 @@ module.exports = {
       if (!guildSettings.isModmailEnabled()) {
         await interaction.reply({
           embeds: [createErrorEmbed('Modmail is not enabled on this server. Ask an administrator to set it up using the `/setup` command.', 'Modmail')],
-          flags: { ephemeral: true }
+          ephemeral: true
         });
         return;
       }
@@ -74,7 +74,7 @@ module.exports = {
             !interaction.member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
           await interaction.reply({
             embeds: [createErrorEmbed('You need Administrator or Manage Server permissions to use this command.', 'Modmail')],
-            flags: { ephemeral: true }
+            ephemeral: true
           });
           return;
         }
@@ -83,7 +83,7 @@ module.exports = {
         if (!interaction.channel.name.startsWith('modmail-')) {
           await interaction.reply({
             embeds: [createErrorEmbed('This command can only be used in modmail channels.', 'Modmail')],
-            flags: { ephemeral: true }
+            ephemeral: true
           });
           return;
         }
@@ -114,7 +114,7 @@ module.exports = {
       if (!threadInfo && interaction.options.getSubcommand() !== 'block' && interaction.options.getSubcommand() !== 'unblock') {
         await interaction.reply({
           embeds: [createErrorEmbed('This channel is not associated with an active modmail thread.', 'Modmail')],
-          flags: { ephemeral: true }
+          ephemeral: true
         });
         return;
       }
@@ -143,7 +143,7 @@ module.exports = {
       
       await interaction.reply({
         embeds: [createErrorEmbed('There was an error processing your command.', 'Modmail')],
-        flags: { ephemeral: true }
+        ephemeral: true
       });
     }
   },
@@ -179,7 +179,7 @@ module.exports = {
       
       await interaction.reply({
         embeds: [createErrorEmbed('There was an error opening the reply form.', 'Modmail')],
-        flags: { ephemeral: true }
+        ephemeral: true
       });
     }
   },
@@ -294,7 +294,7 @@ module.exports = {
       
       await interaction.reply({
         embeds: [createErrorEmbed('There was an error closing this thread.', 'Modmail')],
-        flags: { ephemeral: true }
+        ephemeral: true
       });
     }
   },
@@ -313,7 +313,7 @@ module.exports = {
       if (client.blockedModmailUsers.has(user.id)) {
         await interaction.reply({
           embeds: [createErrorEmbed(`${user.tag} is already blocked from using modmail.`, 'Modmail')],
-          flags: { ephemeral: true }
+          ephemeral: true
         });
         return;
       }
@@ -412,7 +412,7 @@ module.exports = {
       
       await interaction.reply({
         embeds: [createErrorEmbed('There was an error blocking this user.', 'Modmail')],
-        flags: { ephemeral: true }
+        ephemeral: true
       });
     }
   },
@@ -430,7 +430,7 @@ module.exports = {
       if (!client.blockedModmailUsers.has(user.id)) {
         await interaction.reply({
           embeds: [createErrorEmbed(`${user.tag} is not currently blocked from using modmail.`, 'Modmail')],
-          flags: { ephemeral: true }
+          ephemeral: true
         });
         return;
       }
@@ -467,7 +467,7 @@ module.exports = {
       
       await interaction.reply({
         embeds: [createErrorEmbed('There was an error unblocking this user.', 'Modmail')],
-        flags: { ephemeral: true }
+        ephemeral: true
       });
     }
   },
@@ -539,7 +539,7 @@ module.exports = {
         
         await interaction.reply({
           embeds: [createErrorEmbed(`Could not send message to user. They may have DMs disabled or have blocked the bot.\n\nError: ${error.message}`, 'Modmail')],
-          flags: { ephemeral: true }
+          ephemeral: true
         });
       }
       
@@ -548,7 +548,7 @@ module.exports = {
       
       await interaction.reply({
         embeds: [createErrorEmbed('There was an error sending your reply.', 'Modmail')],
-        flags: { ephemeral: true }
+        ephemeral: true
       });
     }
   },

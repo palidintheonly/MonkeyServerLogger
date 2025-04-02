@@ -150,8 +150,7 @@ module.exports = {
     
     logger.info('Logging system initialization complete');
     
-    // Log animated loading indicators initialization
-    logger.info('Animated loading indicators initialized for interactive commands');
-    logger.info('Bot is fully operational with enhanced user experience features!');
+    // Loading animations have been removed as requested
+    logger.info('Bot is fully operational with enhanced features!');
   }
 };

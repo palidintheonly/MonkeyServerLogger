@@ -4,13 +4,10 @@ const { logger } = require('../../utils/logger');
 const { logger: enhancedLogger } = require('../../utils/enhanced-logger');
 const { models } = require('../../database/db');
 const config = require('../../config');
-const { LoadingIndicator } = require('../../utils/loadingIndicator');
+
 
 module.exports = {
   cooldown: config.cooldowns.management,
-  // Custom properties for loading indicators
-  loadingStyle: 'dots',
-  loadingColor: 'blue',
   data: new SlashCommandBuilder()
     .setName('logs')
     .setDescription('Configure log categories and channels')
@@ -87,7 +84,7 @@ module.exports = {
     if (!guildSettings.setupCompleted) {
       await interaction.reply({
         embeds: [createErrorEmbed('You need to set up the logging system first. Use `/setup` to get started.')],
-        flags: { ephemeral: true }
+        ephemeral: true
       });
       return;
     }
@@ -115,23 +112,13 @@ module.exports = {
     const enabled = interaction.options.getBoolean('enabled');
     const channel = interaction.options.getChannel('channel');
     
-    // Create a loading indicator
-    const loader = new LoadingIndicator({
-      text: `${enabled ? 'Enabling' : 'Disabling'} verbose logging...`,
-      style: this.loadingStyle || "dots",
-      color: this.loadingColor || "green"
-    });
-    
-    // Start the loader
-    await loader.start(interaction);
+    await interaction.deferReply();
     
     try {
       // If enabling, check if a channel is provided
       if (enabled && !channel && !guildSettings.verboseLoggingChannelId) {
-        await loader.stop({
-          text: "You need to specify a channel when enabling verbose logging for the first time.",
-          embeds: [createErrorEmbed("Please provide a channel to receive verbose logs.")],
-          success: false
+        await interaction.editReply({
+          embeds: [createErrorEmbed("Please provide a channel to receive verbose logs.")]
         });
         return;
       }
@@ -209,21 +196,15 @@ module.exports = {
         inline: false
       });
       
-      // Stop the loader with success state
-      await loader.stop({
-        text: `Verbose logging ${enabled ? 'enabled' : 'disabled'} successfully!`,
-        embeds: [embed],
-        success: true
+      await interaction.editReply({
+        embeds: [embed]
       });
       
     } catch (error) {
       logger.error(`Error updating verbose logging settings: ${error.message}`);
       
-      // Stop the loader with error state
-      await loader.stop({
-        text: "There was an error updating verbose logging settings!",
-        embeds: [createErrorEmbed(`Error: ${error.message}`)],
-        success: false
+      await interaction.editReply({
+        embeds: [createErrorEmbed(`Error updating verbose logging settings: ${error.message}`)]
       });
     }
   },
@@ -332,7 +313,7 @@ module.exports = {
     if (!config.logging.categories[category]) {
       await interaction.reply({
         embeds: [createErrorEmbed(`Invalid category: ${category}`)],
-        flags: { ephemeral: true }
+        ephemeral: true
       });
       return;
     }
@@ -368,7 +349,7 @@ module.exports = {
       
       await interaction.followUp({
         embeds: [createErrorEmbed(`Could not send a test message to ${channel}. Please check the bot's permissions.`)],
-        flags: { ephemeral: true }
+        ephemeral: true
       });
     }
   },
@@ -385,7 +366,7 @@ module.exports = {
     if (!config.logging.categories[category]) {
       await interaction.reply({
         embeds: [createErrorEmbed(`Invalid category: ${category}`)],
-        flags: { ephemeral: true }
+        ephemeral: true
       });
       return;
     }
@@ -394,7 +375,7 @@ module.exports = {
     if (!guildSettings.loggingChannelId) {
       await interaction.reply({
         embeds: [createErrorEmbed('No main logging channel set. Please run `/setup` first.')],
-        flags: { ephemeral: true }
+        ephemeral: true
       });
       return;
     }
@@ -405,7 +386,7 @@ module.exports = {
     if (!mainChannel) {
       await interaction.reply({
         embeds: [createErrorEmbed('The main logging channel could not be found. Please run `/setup` again.')],
-        flags: { ephemeral: true }
+        ephemeral: true
       });
       return;
     }
@@ -460,22 +441,12 @@ module.exports = {
           ]
         })],
         components: [selectRow],
-        flags: { ephemeral: true }
+        ephemeral: true
       });
     }
     
     else if (interaction.customId === 'logs-toggle-verbose') {
-      // Create a loading indicator
-      const loader = new LoadingIndicator({
-        text: guildSettings.verboseLoggingEnabled 
-          ? "Disabling verbose logging..." 
-          : "Configuring verbose logging...",
-        style: this.loadingStyle || "dots",
-        color: this.loadingColor || "green"
-      });
-      
-      // Start the loader
-      await loader.start(interaction);
+      await interaction.deferReply({ ephemeral: true });
       
       try {
         if (guildSettings.verboseLoggingEnabled) {
@@ -486,14 +457,11 @@ module.exports = {
           enhancedLogger.setVerboseLogging(false);
           logger.info(`Verbose logging disabled for ${interaction.guild.name} by ${interaction.user.tag}`);
           
-          // Stop the loader with success state
-          await loader.stop({
-            text: "Verbose logging disabled successfully.",
+          await interaction.editReply({
             embeds: [createSuccessEmbed(
               "Verbose logging has been disabled. Debug-level logs will no longer be sent to Discord.",
               "Verbose Logging Disabled"
-            )],
-            success: true
+            )]
           });
         } 
         else {
@@ -515,22 +483,16 @@ module.exports = {
             color: "#5865F2" // Discord blurple
           });
           
-          // Stop the loader with the instructions
-          await loader.stop({
-            text: "Please use the command to enable verbose logging.",
-            embeds: [embed],
-            success: true
+          await interaction.editReply({
+            embeds: [embed]
           });
         }
       } 
       catch (error) {
         logger.error(`Error toggling verbose logging: ${error.message}`);
         
-        // Stop the loader with error state
-        await loader.stop({
-          text: "There was an error updating verbose logging settings!",
-          embeds: [createErrorEmbed(`Error: ${error.message}`)],
-          success: false
+        await interaction.editReply({
+          embeds: [createErrorEmbed(`Error updating verbose logging settings: ${error.message}`)]
         });
       }
     }
@@ -544,16 +506,6 @@ module.exports = {
   async handleSelectMenu(interaction, client) {
     if (interaction.customId === 'logs-toggle-categories') {
       await interaction.deferUpdate();
-      
-      // Create a loading indicator for category toggle
-      const loader = new LoadingIndicator({
-        text: "Updating log categories...",
-        style: this.loadingStyle || "dots",
-        color: this.loadingColor || "blue"
-      });
-      
-      // Start the loader
-      await loader.start(interaction);
       
       // Get guild settings
       const guildSettings = await models.Guild.findOrCreateGuild(interaction.guild.id);
@@ -594,12 +546,10 @@ module.exports = {
         embed.addFields({ name: '❌ Disabled Categories', value: disabledList, inline: true });
       }
       
-      // Stop the loader with success state
-      await loader.stop({
-        text: "Log categories have been updated!",
+      // Update the original message with the new content
+      await interaction.editReply({
         embeds: [embed],
-        components: [],
-        success: true
+        components: []
       });
     }
   }

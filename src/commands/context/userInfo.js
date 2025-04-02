@@ -92,7 +92,7 @@ module.exports = {
       // Send the embed
       await interaction.reply({ 
         embeds: [embed], 
-        flags: { ephemeral: true } 
+        ephemeral: true 
       });
       
       logger.info(`User ${interaction.user.tag} requested info about ${targetUser.tag} (${targetUser.id})`);
@@ -102,7 +102,7 @@ module.exports = {
       
       await interaction.reply({ 
         content: 'There was an error fetching user information. Please try again later.', 
-        flags: { ephemeral: true } 
+        ephemeral: true 
       });
     }
   },

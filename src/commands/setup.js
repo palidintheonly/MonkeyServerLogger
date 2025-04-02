@@ -11,7 +11,7 @@ const { createEmbed, createSuccessEmbed, createErrorEmbed } = require('../utils/
 const { logger } = require('../utils/logger');
 const { models } = require('../database/db');
 const config = require('../config');
-const { LoadingIndicator } = require('../utils/loadingIndicator');
+
 
 module.exports = {
   cooldown: config.cooldowns.setup,
@@ -144,14 +144,11 @@ module.exports = {
       const enableModmail = interaction.options.getBoolean('enable_modmail') ?? false;
       const enableVerboseLogging = interaction.options.getBoolean('enable_verbose_logging') ?? false;
       
-      // Create a loading indicator
-      const loader = new LoadingIndicator({
-        text: "Setting up your logging system...",
-        style: "gear",
-        color: "purple"
+      // Inform user we're setting up
+      await interaction.reply({
+        content: "Setting up your logging system...",
+        ephemeral: true
       });
-      
-      await loader.start(interaction);
       
       // Store setup data
       await guildSettings.updateSetupProgress(2, {
@@ -162,7 +159,7 @@ module.exports = {
         enableVerboseLogging: enableVerboseLogging
       });
       
-      await loader.updateText("Creating logging channel...");
+      // Creating logging channel
       
       // Create the logging channel if it doesn't exist
       let loggingChannel;
@@ -192,7 +189,7 @@ module.exports = {
       let verboseLoggingChannel = null;
       
       if (enableVerboseLogging) {
-        await loader.updateText("Setting up verbose logging...");
+        // Setting up verbose logging
         
         try {
           // Create a verbose logging channel
@@ -227,7 +224,7 @@ module.exports = {
       
       // Set up modmail if enabled
       if (enableModmail) {
-        await loader.updateText("Setting up modmail system...");
+        // Setting up modmail system
         
         try {
           // Create or find a modmail category
@@ -300,7 +297,6 @@ module.exports = {
       await guildSettings.save();
       
       // Finalize setup
-      await loader.updateText("Finalizing setup...");
       
       // Construct the success message
       let successMessage = `✅ **Setup completed successfully!**\n\nLogging channel: ${loggingChannel}`;
@@ -335,11 +331,11 @@ module.exports = {
       
       const setupCompleteComponents = new ActionRowBuilder().addComponents(helpButton);
       
-      // Stop the loader with the final message
-      await loader.stop({
+      // Send the final setup message
+      await interaction.editReply({
+        content: null,
         embeds: [setupCompleteEmbed],
-        components: [setupCompleteComponents],
-        success: true
+        components: [setupCompleteComponents]
       });
       
       // Send a welcome message to the logging channel
@@ -482,14 +478,11 @@ module.exports = {
     const enableModmail = interaction.options.getBoolean('enabled');
     const channel = interaction.options.getChannel('channel');
     
-    // Create loading indicator
-    const loader = new LoadingIndicator({
-      text: "Configuring modmail system...",
-      style: "dots",
-      color: "blue"
+    // Show modmail configuration message
+    await interaction.reply({
+      content: "Configuring modmail system...",
+      ephemeral: true
     });
-    
-    await loader.start(interaction);
     
     try {
       if (enableModmail) {
@@ -563,25 +556,25 @@ module.exports = {
         guildSettings.modmailInfoChannelId = modmailChannel.id;
         await guildSettings.save();
         
-        await loader.stop({
-          text: "✅ Modmail system enabled successfully!",
-          success: true
+        // Notify user of success
+        await interaction.editReply({
+          content: "✅ Modmail system enabled successfully!"
         });
       } else {
         // Disabling modmail system
         guildSettings.modmailEnabled = false;
         await guildSettings.save();
         
-        await loader.stop({
-          text: "Modmail system has been disabled. You can re-enable it at any time.",
-          success: true
+        // Notify user of success
+        await interaction.editReply({
+          content: "Modmail system has been disabled. You can re-enable it at any time."
         });
       }
     } catch (error) {
       logger.error(`Error configuring modmail: ${error.message}`);
-      await loader.stop({
-        text: `Error: ${error.message}`,
-        success: false
+      // Show error message
+      await interaction.editReply({
+        content: `Error: ${error.message}`
       });
     }
   },

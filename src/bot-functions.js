@@ -97,7 +97,7 @@ async function handleInteraction(interaction, client) {
       switch (commandName) {
         case 'ping':
           logger.info(`Executing ping command for ${interaction.user.tag}`);
-          const sent = await interaction.reply({ content: 'Measuring ping...', withResponse: true });
+          const sent = await interaction.reply({ content: 'Measuring ping...', fetchReply: true });
           const pingTime = sent.createdTimestamp - interaction.createdTimestamp;
           await interaction.editReply(`Bot Latency: ${pingTime}ms | API Latency: ${Math.round(client.ws.ping)}ms`);
           logger.info(`Ping command completed: ${pingTime}ms latency`);
@@ -129,7 +129,7 @@ async function handleInteraction(interaction, client) {
                 { name: 'Node.js', value: process.version, inline: true }
               ]
             })],
-            flags: { ephemeral: true }
+            ephemeral: true
           });
           logger.info(`Info command completed for ${interaction.user.tag}`);
           break;
@@ -232,7 +232,7 @@ async function handleInteraction(interaction, client) {
             }
           };
           
-          await interaction.reply({ embeds: [helpEmbed], flags: { ephemeral: true } });
+          await interaction.reply({ embeds: [helpEmbed], ephemeral: true });
           logger.info(`Help command completed for ${interaction.user.tag}`);
           break;
           
@@ -267,7 +267,7 @@ async function handleInteraction(interaction, client) {
                 url: inviteLink
               }]
             }],
-            flags: { ephemeral: true }
+            ephemeral: true
           });
           
           logger.info(`Invite command completed for ${interaction.user.tag}`);
@@ -314,7 +314,7 @@ async function handleInteraction(interaction, client) {
           logger.info(`Unknown command received: ${commandName}`);
           await interaction.reply({ 
             content: `This command is not fully implemented yet. Please check back soon!`,
-            flags: { ephemeral: true } 
+            ephemeral: true 
           });
       }
     } catch (error) {
@@ -323,9 +323,9 @@ async function handleInteraction(interaction, client) {
         const errorMessage = `An error occurred while executing this command. Please try again later.`;
         
         if (interaction.deferred || interaction.replied) {
-          await interaction.editReply({ content: errorMessage, flags: { ephemeral: true } });
+          await interaction.editReply({ content: errorMessage, ephemeral: true });
         } else {
-          await interaction.reply({ content: errorMessage, flags: { ephemeral: true } });
+          await interaction.reply({ content: errorMessage, ephemeral: true });
         }
       } catch (replyError) {
         logger.error('Error sending error response:', replyError);
@@ -336,28 +336,28 @@ async function handleInteraction(interaction, client) {
     logger.info(`Button interaction: ${interaction.customId} by ${interaction.user.tag}`);
     await interaction.reply({ 
       content: 'Button interactions are not implemented yet!', 
-      flags: { ephemeral: true } 
+      ephemeral: true 
     });
   } else if (interaction.isStringSelectMenu()) {
     // Handle select menu interactions
     logger.info(`Select menu interaction: ${interaction.customId} by ${interaction.user.tag}`);
     await interaction.reply({ 
       content: 'Select menu interactions are not implemented yet!', 
-      flags: { ephemeral: true } 
+      ephemeral: true 
     });
   } else if (interaction.isModalSubmit()) {
     // Handle modal submissions
     logger.info(`Modal submission: ${interaction.customId} by ${interaction.user.tag}`);
     await interaction.reply({ 
       content: 'Modal submissions are not implemented yet!', 
-      flags: { ephemeral: true } 
+      ephemeral: true 
     });
   } else if (interaction.isContextMenuCommand()) {
     // Handle context menu commands
     logger.info(`Context menu command: ${interaction.commandName} by ${interaction.user.tag}`);
     await interaction.reply({ 
       content: 'Context menu commands are not implemented yet!', 
-      flags: { ephemeral: true } 
+      ephemeral: true 
     });
   }
 }

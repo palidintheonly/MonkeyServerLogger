@@ -61,16 +61,22 @@ class LoadingIndicator {
    * @returns {number} Color in decimal format
    */
   getColor() {
-    if (typeof this.colorTheme === 'number') {
-      return this.colorTheme;
-    } else if (typeof this.colorTheme === 'string' && this.colorTheme.startsWith('#')) {
-      return parseInt(this.colorTheme.slice(1), 16);
-    } else if (themes[this.colorTheme]) {
-      return typeof themes[this.colorTheme] === 'function' 
-        ? themes[this.colorTheme]() 
-        : themes[this.colorTheme];
+    try {
+      if (typeof this.colorTheme === 'number') {
+        return this.colorTheme;
+      } else if (typeof this.colorTheme === 'string' && this.colorTheme.startsWith('#')) {
+        return parseInt(this.colorTheme.slice(1), 16);
+      } else if (typeof this.colorTheme === 'string' && themes[this.colorTheme]) {
+        return typeof themes[this.colorTheme] === 'function' 
+          ? themes[this.colorTheme]() 
+          : themes[this.colorTheme];
+      }
+      // Default fallback if the color theme is invalid
+      return themes.blue;
+    } catch (error) {
+      logger.error(`Error in getColor: ${error.message}`);
+      return themes.blue; // Safe fallback
     }
-    return themes.blue;
   }
 
   /**
@@ -78,13 +84,30 @@ class LoadingIndicator {
    * @returns {EmbedBuilder} Discord embed
    */
   createEmbed() {
-    const frame = this.frames[this.currentFrame];
-    const elapsed = ((Date.now() - this.createdAt) / 1000).toFixed(1);
+    try {
+      const frame = this.frames[this.currentFrame] || '⌛';
+      const elapsed = ((Date.now() - this.createdAt) / 1000).toFixed(1);
 
-    return new EmbedBuilder()
-      .setDescription(`${frame} ${this.text}`)
-      .setColor(this.getColor())
-      .setFooter({ text: `Time elapsed: ${elapsed}s` });
+      const embed = new EmbedBuilder()
+        .setDescription(`${frame} ${this.text}`)
+        .setFooter({ text: `Time elapsed: ${elapsed}s` });
+        
+      // Safely add color
+      try {
+        embed.setColor(this.getColor());
+      } catch (colorError) {
+        logger.error(`Error setting color in embed: ${colorError.message}`);
+        embed.setColor(0x3498db); // Fallback to blue
+      }
+      
+      return embed;
+    } catch (error) {
+      logger.error(`Error creating embed: ${error.message}`);
+      // Return a simple fallback embed
+      return new EmbedBuilder()
+        .setDescription(`⌛ ${this.text || 'Loading...'}`)
+        .setColor(0x3498db); // Fallback to blue
+    }
   }
 
   /**
@@ -100,13 +123,13 @@ class LoadingIndicator {
       if (!interaction.deferred && !interaction.replied) {
         this.message = await interaction.reply({
           embeds: [this.createEmbed()],
-          flags: { ephemeral: this.ephemeral },
-          withResponse: true,
+          ephemeral: this.ephemeral,
+          fetchReply: true,
         });
       } else {
         this.message = await interaction.editReply({
           embeds: [this.createEmbed()],
-          withResponse: true,
+          fetchReply: true,
         });
       }
 
@@ -160,13 +183,32 @@ class LoadingIndicator {
       const updateOptions = {};
       
       if (text) {
-        const colorHex = success ? themes.green : themes.red;
-        
-        const finalEmbed = new EmbedBuilder()
-          .setDescription(text)
-          .setColor(colorHex);
+        try {
+          // Safely handle color
+          let colorHex;
+          try {
+            colorHex = success ? themes.green : themes.red;
+          } catch (colorError) {
+            logger.error(`Error getting theme color: ${colorError.message}`);
+            colorHex = success ? 0x2ecc71 : 0xe74c3c; // Fallback colors
+          }
           
-        updateOptions.embeds = [finalEmbed];
+          const finalEmbed = new EmbedBuilder()
+            .setDescription(text);
+            
+          try {
+            finalEmbed.setColor(colorHex);
+          } catch (embedColorError) {
+            logger.error(`Error setting color in final embed: ${embedColorError.message}`);
+          }
+          
+          updateOptions.embeds = [finalEmbed];
+        } catch (embedError) {
+          logger.error(`Error creating final embed: ${embedError.message}`);
+          // In case of failure, just send plain text
+          updateOptions.content = text;
+          updateOptions.embeds = [];
+        }
       } else if (embeds) {
         updateOptions.embeds = embeds;
       }
@@ -189,13 +231,30 @@ class LoadingIndicator {
   async updateText(newText) {
     if (this.stopped) return;
     
-    this.text = newText;
-    
     try {
+      this.text = newText || 'Loading...';
+      
+      // Only proceed if interaction is valid
       if (this.interaction && (this.interaction.replied || this.interaction.deferred)) {
-        await this.interaction.editReply({
-          embeds: [this.createEmbed()],
-        });
+        try {
+          // Create embed with error catching
+          const embed = this.createEmbed();
+          
+          await this.interaction.editReply({
+            embeds: [embed],
+          });
+        } catch (embedError) {
+          logger.error(`Error with embed during text update: ${embedError.message}`);
+          // Fallback to plain text update
+          try {
+            await this.interaction.editReply({
+              content: `${this.text}`,
+              embeds: []
+            });
+          } catch (fallbackError) {
+            logger.error(`Even fallback plain text update failed: ${fallbackError.message}`);
+          }
+        }
       }
     } catch (error) {
       logger.error(`Error updating loading text: ${error.message}`);

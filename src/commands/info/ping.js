@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
-const { createEmbed, createSuccessEmbed } = require('../../utils/embedBuilder');
+const { createEmbed, createSuccessEmbed, createErrorEmbed } = require('../../utils/embedBuilder');
 const { logger } = require('../../utils/logger');
 const config = require('../../config');
 
@@ -34,7 +34,7 @@ module.exports = {
   // Handle the ping check subcommand
   async handlePingCheck(interaction, client) {
     // Defer reply to measure round-trip time
-    await interaction.deferReply({ flags: { ephemeral: true } });
+    await interaction.deferReply({ ephemeral: true });
     
     // Calculate the bot's ping
     const sent = await interaction.fetchReply(); // This approach is still valid as a separate method call
@@ -89,7 +89,7 @@ module.exports = {
   
   // Handle the command reload subcommand
   async handleCommandReload(interaction, client) {
-    await interaction.deferReply({ flags: { ephemeral: true } });
+    await interaction.deferReply({ ephemeral: true });
     
     // Check if the user has administrator permissions, since we can't set it at the subcommand level
     if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
@@ -102,31 +102,61 @@ module.exports = {
     }
     
     try {
+      // Update the message to show progress
+      await interaction.editReply({
+        content: '⏳ Starting command reload process... This may take a moment.',
+      });
+      
       // We need to access the main bot.js file where registerCommands is defined
       const path = require('path');
       const botPath = path.resolve(__dirname, '../../../bot.js');
       
-      // Clear the require cache for the bot.js file
-      delete require.cache[botPath];
+      // Clear the require cache for the bot.js file and all related command files
+      logger.info(`Clearing require cache for all command files (requested by ${interaction.user.tag})`);
+      Object.keys(require.cache).forEach(key => {
+        if (key.includes('commands') || key.includes('bot.js')) {
+          delete require.cache[key];
+          logger.debug(`Cleared cache for: ${key}`);
+        }
+      });
       
-      // Re-require the bot.js file
+      // Update progress
+      await interaction.editReply({
+        content: '🗑️ Command cache cleared. Now reloading bot modules...',
+      });
+      
+      // Re-require the bot.js file with fresh code
       const bot = require(botPath);
       
       if (typeof bot.registerCommands === 'function') {
-        // Show "working on it" message
+        // Clear client.commands collection first
+        client.commands.clear();
+        client.contextCommands.clear();
+        logger.info(`Command collections cleared by ${interaction.user.tag}`);
+        
+        // Update progress
         await interaction.editReply({
-          content: '⚙️ Reloading all commands and clearing cache... This may take a moment.',
+          content: '⚙️ Now deleting old commands from Discord API and registering fresh commands...',
         });
         
-        // Force reload with cache clearing
-        await bot.registerCommands(true);
+        // Force reload with cache clearing and command deletion
+        const result = await bot.registerCommands(true);
         
+        // Generate a detailed success message
         const successEmbed = createSuccessEmbed(
-          'All commands have been reloaded successfully with a fresh cache. The changes will be available immediately.',
-          '🔄 Commands Reloaded'
+          'All commands have been reloaded with a fresh cache. Old commands were deleted and new ones registered. The changes are now available.',
+          '🔄 Commands Force-Refreshed'
+        );
+        
+        successEmbed.addFields(
+          { name: '🧹 Cache Cleared', value: 'All command module caches have been cleared', inline: true },
+          { name: '🗑️ Old Commands', value: 'All previous commands were deleted from Discord', inline: true },
+          { name: '✅ Registration', value: 'New commands have been registered successfully', inline: true },
+          { name: '🕒 Timestamp', value: `<t:${Math.floor(Date.now() / 1000)}:F>`, inline: false }
         );
         
         logger.info(`Commands manually reloaded by ${interaction.user.tag} (${interaction.user.id}) in guild ${interaction.guild.name} (${interaction.guild.id})`);
+        console.log(`ADMIN ACTION: Commands force-reloaded by ${interaction.user.tag} in ${interaction.guild.name}`);
         
         await interaction.editReply({
           content: null,
@@ -142,6 +172,7 @@ module.exports = {
       logger.error(`Error during manual command reload by ${interaction.user.tag}:`, error);
       await interaction.editReply({
         content: `❌ Error reloading commands: ${error.message}`,
+        embeds: [createErrorEmbed(`Failed to reload commands: ${error.message}`, 'Command Reload Error')]
       });
     }
   }

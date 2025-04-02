@@ -1,6 +1,7 @@
 const { Collection, InteractionType } = require('discord.js');
 const { logger } = require('../../utils/logger');
 const { createErrorEmbed } = require('../../utils/embedBuilder');
+const { createLoader } = require('../../utils/loadingIndicator');
 const config = require('../../config');
 
 module.exports = {
@@ -45,15 +46,66 @@ module.exports = {
       timestamps.set(interaction.user.id, now);
       setTimeout(() => timestamps.delete(interaction.user.id), cooldownAmount);
       
-      // Execute the command
+      // Store the loader in client to allow commands to access it
+      if (!client.activeLoaders) {
+        client.activeLoaders = new Collection();
+      }
+      
+      // Execute command with loading indicator if applicable
       try {
         logger.info(`${interaction.user.tag} used command: ${interaction.commandName}`);
         
-        // Execute the command directly
-        await command.execute(interaction, client);
+        // Check if command should use a loading indicator (most commands should)
+        // Simple commands like ping don't need it
+        const skipLoadingFor = ['ping', 'help', 'invite'];
         
+        if (!skipLoadingFor.includes(interaction.commandName) && !command.skipLoading) {
+          // Create a loading indicator
+          const commandLabel = interaction.commandName.charAt(0).toUpperCase() + 
+                               interaction.commandName.slice(1);
+          
+          const loadingText = `Processing ${commandLabel} command...`;
+          const animationStyle = command.loadingStyle || 'dots';
+          const colorTheme = command.loadingColor || 'blue';
+          
+          // Create and start the loader
+          const loader = createLoader(interaction, {
+            text: loadingText,
+            style: animationStyle,
+            color: colorTheme,
+            ephemeral: command.ephemeral === true
+          });
+          
+          // Store the loader for the command to use
+          client.activeLoaders.set(interaction.id, loader);
+          
+          // Execute the command
+          await command.execute(interaction, client);
+          
+          // If the loader wasn't stopped by the command, stop it now
+          if (!loader.stopped) {
+            await loader.stop({
+              text: `${commandLabel} command completed successfully.`,
+              success: true
+            });
+          }
+        } else {
+          // Execute without loading animation
+          await command.execute(interaction, client);
+        }
       } catch (error) {
         logger.error(`Error executing command ${interaction.commandName}:`, error);
+        
+        // Try to stop any active loader with an error message
+        const loader = client.activeLoaders.get(interaction.id);
+        if (loader && !loader.stopped) {
+          await loader.stop({
+            text: 'There was an error while executing this command!',
+            success: false
+          });
+          client.activeLoaders.delete(interaction.id);
+          return;
+        }
         
         // Fallback error handling if no loader was active
         const errorMessage = 'There was an error while executing this command!';
@@ -97,11 +149,56 @@ module.exports = {
       try {
         logger.info(`${interaction.user.tag} used context menu: ${interaction.commandName}`);
         
-        // Execute the command directly
-        await command.execute(interaction, client);
-        
+        // Use loading indicator for context menu commands
+        if (!command.skipLoading) {
+          // Create a loading indicator
+          const commandLabel = interaction.commandName;
+          
+          const loadingText = `Processing ${commandLabel}...`;
+          const animationStyle = command.loadingStyle || 'dots';
+          const colorTheme = command.loadingColor || 'purple';
+          
+          // Create and start the loader
+          const loader = createLoader(interaction, {
+            text: loadingText,
+            style: animationStyle,
+            color: colorTheme,
+            ephemeral: command.ephemeral === true
+          });
+          
+          // Store the loader for the command to use
+          if (!client.activeLoaders) client.activeLoaders = new Collection();
+          client.activeLoaders.set(interaction.id, loader);
+          
+          // Execute the command
+          await command.execute(interaction, client);
+          
+          // If the loader wasn't stopped by the command, stop it now
+          if (!loader.stopped) {
+            await loader.stop({
+              text: `${commandLabel} completed successfully.`,
+              success: true
+            });
+          }
+        } else {
+          // Execute without loading animation
+          await command.execute(interaction, client);
+        }
       } catch (error) {
         logger.error(`Error executing context command ${interaction.commandName}:`, error);
+        
+        // Try to stop any active loader with an error message
+        if (client.activeLoaders && client.activeLoaders.has(interaction.id)) {
+          const loader = client.activeLoaders.get(interaction.id);
+          if (loader && !loader.stopped) {
+            await loader.stop({
+              text: 'There was an error while executing this command!',
+              success: false
+            });
+            client.activeLoaders.delete(interaction.id);
+            return;
+          }
+        }
         
         // Reply with error message
         const errorMessage = 'There was an error while executing this context menu command!';
@@ -251,68 +348,63 @@ module.exports = {
         return;
       }
       
-      // Handle specific select menus for new commands
-      if (interaction.customId.startsWith('logs-')) {
-        const logsCommand = client.commands.get('logs');
-        if (logsCommand && logsCommand.handleSelectMenu) {
-          try {
-            await logsCommand.handleSelectMenu(interaction, client);
-            return;
-          } catch (error) {
-            logger.error(`Error handling logs select menu ${interaction.customId}:`, error);
-            await interaction.reply({
-              embeds: [createErrorEmbed('There was an error processing your logs selection!')],
-              ephemeral: true
-            });
-          }
-          return;
-        }
-      }
-      
-      if (interaction.customId.startsWith('setup-')) {
-        const setupCommand = client.commands.get('setup');
-        if (setupCommand && setupCommand.handleSelectMenu) {
-          try {
-            await setupCommand.handleSelectMenu(interaction, client);
-            return;
-          } catch (error) {
-            logger.error(`Error handling setup select menu ${interaction.customId}:`, error);
-            await interaction.reply({
-              embeds: [createErrorEmbed('There was an error processing your setup selection!')],
-              ephemeral: true
-            });
-          }
-          return;
-        }
-      }
-      
-      if (interaction.customId.startsWith('help-')) {
-        const helpCommand = client.commands.get('help');
-        if (helpCommand && helpCommand.handleSelectMenu) {
-          try {
-            await helpCommand.handleSelectMenu(interaction, client);
-            return;
-          } catch (error) {
-            logger.error(`Error handling help select menu ${interaction.customId}:`, error);
-            await interaction.reply({
-              embeds: [createErrorEmbed('There was an error processing your help selection!')],
-              ephemeral: true
-            });
-          }
-          return;
-        }
-      }
-      
-      // Extract command name from customId (format: command-name-action) for other commands
+      // Extract command name from customId (format: command-name-action)
       const [commandName] = interaction.customId.split('-');
       
       const command = client.commands.get(commandName);
       if (command && command.handleSelectMenu) {
         try {
-          // Execute the select menu handler directly
-          await command.handleSelectMenu(interaction, client);
+          // Use loading indicator for select menu interactions
+          if (!command.skipLoadingSelects) {
+            // Extract the action from the customId (format: command-action-id)
+            const customIdParts = interaction.customId.split('-');
+            const action = customIdParts.length > 1 ? customIdParts[1] : 'selection';
+            
+            const loadingText = `Processing ${action}...`;
+            const animationStyle = command.loadingStyle || 'bounce';
+            const colorTheme = command.loadingColor || 'blue';
+            
+            // Create and start the loader
+            const loader = createLoader(interaction, {
+              text: loadingText,
+              style: animationStyle,
+              color: colorTheme,
+              ephemeral: false
+            });
+            
+            // Store the loader for the command to use
+            if (!client.activeLoaders) client.activeLoaders = new Collection();
+            client.activeLoaders.set(interaction.id, loader);
+            
+            // Execute the select menu handler
+            await command.handleSelectMenu(interaction, client);
+            
+            // If the loader wasn't stopped by the command, stop it now
+            if (!loader.stopped) {
+              await loader.stop({
+                text: `Selection processed successfully.`,
+                success: true
+              });
+            }
+          } else {
+            // Execute without loading animation
+            await command.handleSelectMenu(interaction, client);
+          }
         } catch (error) {
           logger.error(`Error handling select menu ${interaction.customId}:`, error);
+          
+          // Try to stop any active loader with an error message
+          if (client.activeLoaders && client.activeLoaders.has(interaction.id)) {
+            const loader = client.activeLoaders.get(interaction.id);
+            if (loader && !loader.stopped) {
+              await loader.stop({
+                text: 'There was an error processing your selection!',
+                success: false
+              });
+              client.activeLoaders.delete(interaction.id);
+              return;
+            }
+          }
           
           await interaction.reply({
             embeds: [createErrorEmbed('There was an error processing your selection!')],
@@ -326,11 +418,10 @@ module.exports = {
     else if (interaction.isButton()) {
       // Handle special button interactions first
       if (interaction.customId.startsWith('setup-')) {
-        // Check new commands first
-        const newSetupCommand = client.commands.get('setup');
-        if (newSetupCommand && newSetupCommand.handleButton) {
+        const setupCommand = client.commands.get('setup');
+        if (setupCommand && setupCommand.handleButton) {
           try {
-            await newSetupCommand.handleButton(interaction, client);
+            await setupCommand.handleButton(interaction, client);
             return;
           } catch (error) {
             logger.error(`Error handling setup button ${interaction.customId}:`, error);
@@ -349,65 +440,6 @@ module.exports = {
               }
             } catch (replyError) {
               logger.error(`Failed to send error reply for setup button: ${replyError.message}`);
-            }
-            return;
-          }
-        }
-      }
-      
-      // Handle logs command buttons
-      if (interaction.customId.startsWith('logs-')) {
-        const logsCommand = client.commands.get('logs');
-        if (logsCommand && logsCommand.handleButton) {
-          try {
-            await logsCommand.handleButton(interaction, client);
-            return;
-          } catch (error) {
-            logger.error(`Error handling logs button ${interaction.customId}:`, error);
-            // Try to respond with an error message if possible
-            try {
-              if (!interaction.replied && !interaction.deferred) {
-                await interaction.reply({
-                  embeds: [createErrorEmbed(`An error occurred: ${error.message}`)],
-                  ephemeral: true
-                });
-              } else {
-                await interaction.followUp({
-                  embeds: [createErrorEmbed(`An error occurred: ${error.message}`)],
-                  ephemeral: true
-                });
-              }
-            } catch (replyError) {
-              logger.error(`Failed to send error reply for logs button: ${replyError.message}`);
-            }
-            return;
-          }
-        }
-      }
-      
-      // Handle help command buttons
-      if (interaction.customId.startsWith('help-')) {
-        const helpCommand = client.commands.get('help');
-        if (helpCommand && helpCommand.handleButton) {
-          try {
-            await helpCommand.handleButton(interaction, client);
-            return;
-          } catch (error) {
-            logger.error(`Error handling help button ${interaction.customId}:`, error);
-            try {
-              if (!interaction.replied && !interaction.deferred) {
-                await interaction.reply({
-                  embeds: [createErrorEmbed(`An error occurred: ${error.message}`)],
-                  ephemeral: true
-                });
-              } else {
-                await interaction.followUp({
-                  embeds: [createErrorEmbed(`An error occurred: ${error.message}`)],
-                  ephemeral: true
-                });
-              }
-            } catch (replyError) {
-              logger.error(`Failed to send error reply for help button: ${replyError.message}`);
             }
             return;
           }
@@ -450,10 +482,57 @@ module.exports = {
       const command = client.commands.get(commandName);
       if (command && command.handleButton) {
         try {
-          // Execute the button handler directly
-          await command.handleButton(interaction, client);
+          // Use loading indicator for button interactions
+          if (!command.skipLoadingButtons) {
+            // Extract the action from the customId (format: command-action-id)
+            const customIdParts = interaction.customId.split('-');
+            const action = customIdParts.length > 1 ? customIdParts[1] : 'action';
+            
+            const loadingText = `Processing ${action}...`;
+            const animationStyle = command.loadingStyle || 'spin';
+            const colorTheme = command.loadingColor || 'green';
+            
+            // Create and start the loader
+            const loader = createLoader(interaction, {
+              text: loadingText,
+              style: animationStyle,
+              color: colorTheme,
+              ephemeral: false
+            });
+            
+            // Store the loader for the command to use
+            if (!client.activeLoaders) client.activeLoaders = new Collection();
+            client.activeLoaders.set(interaction.id, loader);
+            
+            // Execute the button handler
+            await command.handleButton(interaction, client);
+            
+            // If the loader wasn't stopped by the command, stop it now
+            if (!loader.stopped) {
+              await loader.stop({
+                text: `Action completed successfully.`,
+                success: true
+              });
+            }
+          } else {
+            // Execute without loading animation
+            await command.handleButton(interaction, client);
+          }
         } catch (error) {
           logger.error(`Error handling button ${interaction.customId}:`, error);
+          
+          // Try to stop any active loader with an error message
+          if (client.activeLoaders && client.activeLoaders.has(interaction.id)) {
+            const loader = client.activeLoaders.get(interaction.id);
+            if (loader && !loader.stopped) {
+              await loader.stop({
+                text: 'There was an error processing your action!',
+                success: false
+              });
+              client.activeLoaders.delete(interaction.id);
+              return;
+            }
+          }
           
           await interaction.reply({
             embeds: [createErrorEmbed('There was an error processing your button click!')],
