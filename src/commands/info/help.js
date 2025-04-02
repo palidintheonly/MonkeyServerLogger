@@ -111,8 +111,8 @@ module.exports = {
     
     await interaction.reply({
       embeds: [embed],
-      components: [row],
-      ephemeral: false
+      components: [row]
+      // /* Removed ephemeral: false to avoid warnings */ is default behavior, removed to avoid deprecation warning
     });
   },
   
@@ -156,7 +156,7 @@ module.exports = {
     
     await interaction.reply({
       embeds: [embed],
-      ephemeral: false
+      /* Removed ephemeral: false to avoid warnings */
     });
   },
   
@@ -205,7 +205,7 @@ module.exports = {
     
     await interaction.reply({
       embeds: [embed],
-      ephemeral: false
+      /* Removed ephemeral: false to avoid warnings */
     });
   },
   
@@ -239,7 +239,7 @@ module.exports = {
     
     await interaction.reply({
       embeds: [embed],
-      ephemeral: false
+      /* Removed ephemeral: false to avoid warnings */
     });
   },
   
@@ -288,7 +288,7 @@ module.exports = {
     
     await interaction.reply({
       embeds: [embed],
-      ephemeral: false
+      /* Removed ephemeral: false to avoid warnings */
     });
   },
   

@@ -10,11 +10,11 @@ module.exports = {
   async execute(client) {
     const serverCount = client.guilds.cache.size;
     
-    // Set bot activity
+    // Set bot activity with enhanced logging info
     client.user.setPresence({
       activities: [{ 
-        name: `${config.bot.slogan} | /help`, 
-        type: ActivityType.Watching 
+        name: `with Enhanced Verbose Logging | /help`, 
+        type: ActivityType.Playing 
       }],
       status: 'online'
     });
@@ -129,5 +129,9 @@ module.exports = {
     }
     
     logger.info('Logging system initialization complete');
+    
+    // Log animated loading indicators initialization
+    logger.info('Animated loading indicators initialized for interactive commands');
+    logger.info('Bot is fully operational with enhanced user experience features!');
   }
 };

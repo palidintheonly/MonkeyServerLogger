@@ -380,32 +380,33 @@ if (shouldRunHttpServer) {
       res.end(`Discord bot is running! ${isSharded ? `(Shard ${client.shard?.ids[0] || 0})` : ''}`);
     });
 
-    // Use a try-catch to handle potential EADDRINUSE errors
-    try {
-      server.listen(5000, '0.0.0.0', () => {
-        logger.info('Health check server running on port 5000');
-      });
-      
-      // Handle HTTP server errors
-      server.on('error', (error) => {
-        logger.error('HTTP server error:', error);
-        
-        if (error.code === 'EADDRINUSE') {
-          logger.warn('Port 5000 is already in use, health check server will not start');
-          
-          // Try an alternative port
-          try {
-            server.listen(8080, '0.0.0.0', () => {
-              logger.info('Health check server running on alternative port 8080');
-            });
-          } catch (fallbackError) {
-            logger.error('Failed to start HTTP server on fallback port:', fallbackError);
-          }
+    // Try multiple ports in case the default is in use
+    const tryPort = (port) => {
+      server.once('error', err => {
+        if (err.code === 'EADDRINUSE') {
+          logger.warn(`Port ${port} is already in use, trying next port...`);
+          tryPort(port + 1);
+        } else {
+          logger.error(`Server error:`, err);
         }
       });
-    } catch (error) {
-      logger.error('Failed to start HTTP server:', error);
-    }
+      
+      server.once('listening', () => {
+        const address = server.address();
+        logger.info(`Health check server running on port ${address.port}`);
+      });
+      
+      server.listen(port, '0.0.0.0');
+    };
+    
+    tryPort(7000); // Start with port 7000 which should be available
+      
+    // Handle other HTTP server errors that might occur after listening
+    server.on('error', (error) => {
+      if (error.code !== 'EADDRINUSE') { // EADDRINUSE is already handled in tryPort
+        logger.error('HTTP server error:', error);
+      }
+    });
   });
 } else {
   logger.info('Skipping health check server on this process to avoid port conflicts');

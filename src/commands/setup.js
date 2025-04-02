@@ -3,6 +3,7 @@ const { createEmbed, createSuccessEmbed, createErrorEmbed } = require('../utils/
 const { logger } = require('../utils/logger');
 const { models } = require('../database/db');
 const config = require('../config');
+const { LoadingIndicator } = require('../utils/loadingIndicator');
 
 module.exports = {
   cooldown: config.cooldowns.setup,
@@ -22,7 +23,7 @@ module.exports = {
         !interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
       await interaction.reply({
         embeds: [createErrorEmbed('Only the server owner or administrators can use the setup command.')],
-        ephemeral: true
+        flags: { ephemeral: true }
       });
       return;
     }
@@ -70,7 +71,7 @@ module.exports = {
       await interaction.reply({
         embeds: [resumeEmbed],
         components: [buttonRow],
-        ephemeral: true
+        flags: { ephemeral: true }
       });
       
       return;
@@ -190,9 +191,26 @@ module.exports = {
    * @param {Object} interaction - Modal interaction
    * @param {Object} client - Discord client
    */
+  // Custom properties for loading indicators
+  loadingStyle: 'gear',
+  loadingColor: 'purple',
+
   async handleModal(interaction, client) {
     try {
-      await interaction.deferReply();
+      // Get any existing loader from the interaction or create our own
+      let loader;
+      if (client.activeLoaders && client.activeLoaders.has(interaction.id)) {
+        loader = client.activeLoaders.get(interaction.id);
+      } else {
+        // Create a unique setup loader
+        await interaction.deferReply();
+        loader = new LoadingIndicator({
+          text: "Setting up your logging system...",
+          style: "gear",
+          color: "purple"
+        });
+        await loader.start(interaction);
+      }
       
       // Get the input values
       const channelName = interaction.fields.getTextInputValue('channelName').trim() || config.logging.defaultChannelName;
@@ -459,18 +477,43 @@ module.exports = {
         }
       }
       
-      // Send the category selection message
-      await interaction.editReply({
-        embeds: [createSuccessEmbed(setupSuccessMessage), categorySelectionEmbed],
-        components: [selectRow, buttonRow]
+      // Update our loading indicator and change to success state
+      await loader.updateText("Almost done...");
+      
+      // Stop the loader with our success components
+      await loader.stop({
+        text: setupSuccessMessage,
+        embeds: [categorySelectionEmbed],
+        components: [selectRow, buttonRow],
+        success: true
       });
+      
+      // Track this loader if client supports it
+      if (client.activeLoaders) {
+        client.activeLoaders.delete(interaction.id);
+      }
       
     } catch (error) {
       logger.error(`Error in setup modal handler: ${error.message}`);
-      await interaction.editReply({
-        embeds: [createErrorEmbed(`An error occurred during setup: ${error.message}`)],
-        ephemeral: true
-      });
+      
+      // If we have a loader, stop it with error state
+      if (loader) {
+        await loader.stop({
+          text: `An error occurred during setup: ${error.message}`,
+          success: false
+        });
+      } else {
+        // Fallback if loader wasn't available
+        await interaction.editReply({
+          embeds: [createErrorEmbed(`An error occurred during setup: ${error.message}`)],
+          flags: { ephemeral: true }
+        });
+      }
+      
+      // Track this loader if client supports it
+      if (client.activeLoaders) {
+        client.activeLoaders.delete(interaction.id);
+      }
     }
   },
   
@@ -482,6 +525,16 @@ module.exports = {
   async handleSelectMenu(interaction, client) {
     if (interaction.customId === 'setup-categories') {
       await interaction.deferUpdate();
+      
+      // Create a loading indicator for category selection
+      const loader = new LoadingIndicator({
+        text: "Updating log categories...",
+        style: this.loadingStyle || "dots",
+        color: this.loadingColor || "blue" 
+      });
+      
+      // Start the loader
+      await loader.start(interaction);
       
       // Get the selected categories
       const selectedCategories = interaction.values;
@@ -520,10 +573,12 @@ module.exports = {
           }))
       });
       
-      // Update the message
-      await interaction.editReply({
-        embeds: [createSuccessEmbed('Categories updated!'), updatedEmbed],
-        components: interaction.message.components
+      // Stop the loader with success state
+      await loader.stop({
+        text: 'Log categories have been updated!',
+        embeds: [updatedEmbed],
+        components: interaction.message.components,
+        success: true
       });
     }
   },
@@ -704,6 +759,16 @@ module.exports = {
     } else if (interaction.customId === 'setup-confirm') {
       await interaction.deferUpdate();
       
+      // Create a loading indicator for the final confirmation
+      const loader = new LoadingIndicator({
+        text: "Finalizing your setup...",
+        style: this.loadingStyle || "pulse",
+        color: this.loadingColor || "blue"
+      });
+      
+      // Start the loader by editing the reply
+      await loader.start(interaction);
+      
       // Get guild settings
       const guildSettings = await models.Guild.findOrCreateGuild(interaction.guild.id);
       
@@ -729,10 +794,15 @@ module.exports = {
         '✅ Setup Complete'
       );
       
-      // Remove components from the message
-      await interaction.editReply({
+      // Update our loading indicator with progress messages
+      await loader.updateText("Writing configuration...");
+      
+      // Stop the loader with success state
+      await loader.stop({
+        text: successMessage,
         embeds: [finalEmbed],
-        components: []
+        components: [],
+        success: true
       });
       
       // Send a message to the logging channel

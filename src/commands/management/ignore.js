@@ -46,7 +46,7 @@ module.exports = {
     if (!guildSettings.setupCompleted) {
       await interaction.reply({
         embeds: [createErrorEmbed('You need to set up the logging system first. Use `/setup` to get started.')],
-        ephemeral: true
+        flags: { ephemeral: true }
       });
       return;
     }
@@ -237,7 +237,7 @@ module.exports = {
           ]
         })],
         components: [selectRow],
-        ephemeral: true
+        flags: { ephemeral: true }
       });
     } else if (interaction.customId === 'ignore-manage-roles') {
       // Get the roles in the guild
@@ -274,7 +274,7 @@ module.exports = {
           ]
         })],
         components: [selectRow],
-        ephemeral: true
+        flags: { ephemeral: true }
       });
     }
   },

@@ -62,7 +62,7 @@ module.exports = {
       // Send error message
       await interaction.reply({ 
         content: 'There was an error generating the invite link. Please try again later.', 
-        ephemeral: true 
+        flags: { ephemeral: true } 
       });
     }
   }

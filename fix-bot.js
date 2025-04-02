@@ -239,7 +239,7 @@ client.on('interactionCreate', async interaction => {
         ephemeral: true 
       });
     }
-  } else if (interaction.isSelectMenu()) {
+  } else if (interaction.isStringSelectMenu()) {
     // Handle select menu interactions
     logger.info(`Select menu interaction: ${interaction.customId} by ${interaction.user.tag}`);
     
@@ -254,13 +254,13 @@ client.on('interactionCreate', async interaction => {
         logger.error(`Error handling select menu interaction ${interaction.customId}:`, error);
         await interaction.reply({ 
           content: 'There was an error processing this select menu interaction.', 
-          ephemeral: true 
+          ephemeral: true
         }).catch(e => logger.error('Could not send error response:', e));
       }
     } else {
       await interaction.reply({ 
         content: 'Select menu handler not implemented.', 
-        ephemeral: true 
+        ephemeral: true
       });
     }
   } else if (interaction.isModalSubmit()) {
@@ -278,13 +278,13 @@ client.on('interactionCreate', async interaction => {
         logger.error(`Error handling modal submission ${interaction.customId}:`, error);
         await interaction.reply({ 
           content: 'There was an error processing this modal submission.', 
-          ephemeral: true 
+          ephemeral: true
         }).catch(e => logger.error('Could not send error response:', e));
       }
     } else {
       await interaction.reply({ 
         content: 'Modal submission handler not implemented.', 
-        ephemeral: true 
+        ephemeral: true
       });
     }
   } else if (interaction.isContextMenuCommand()) {
@@ -300,13 +300,13 @@ client.on('interactionCreate', async interaction => {
         logger.error(`Error executing context menu command ${interaction.commandName}:`, error);
         await interaction.reply({ 
           content: 'There was an error executing this context menu command.', 
-          ephemeral: true 
+          ephemeral: true
         }).catch(e => logger.error('Could not send error response:', e));
       }
     } else {
       await interaction.reply({ 
         content: 'This context menu command is not implemented yet.', 
-        ephemeral: true 
+        ephemeral: true
       });
     }
   }
@@ -322,7 +322,7 @@ client.once('ready', async () => {
   
   // Set activity
   client.user.setPresence({
-    activities: [{ name: 'with Enhanced Verbose Logging | /help', type: 0 }],
+    activities: [{ name: 'with Loading Animations & Enhanced Logging | /help', type: 0 }],
     status: 'online'
   });
   
@@ -401,6 +401,10 @@ client.once('ready', async () => {
     logger.info(`- ${guild.name} (${guild.id}) - ${guild.memberCount} members`);
   });
   
+  // Initialize activeLoaders collection for tracking loading indicators
+  client.activeLoaders = new Collection();
+  logger.info('Animated loading indicators initialized for interactive commands');
+  
   // Start a basic health check server
   const http = require('http');
   const server = http.createServer((req, res) => {
@@ -408,9 +412,26 @@ client.once('ready', async () => {
     res.end('Discord bot is running!');
   });
   
-  server.listen(5000, '0.0.0.0', () => {
-    logger.info('Health check server running on port 5000');
-  });
+  // Try multiple ports in case the default is in use
+  const tryPort = (port) => {
+    server.once('error', err => {
+      if (err.code === 'EADDRINUSE') {
+        logger.warn(`Port ${port} is already in use, trying next port...`);
+        tryPort(port + 1);
+      } else {
+        logger.error(`Server error:`, err);
+      }
+    });
+    
+    server.once('listening', () => {
+      const address = server.address();
+      logger.info(`Health check server running on port ${address.port}`);
+    });
+    
+    server.listen(port, '0.0.0.0');
+  };
+  
+  tryPort(8080); // Start with port 8080 instead of 5000 which may be in use
 });
 
 // Error handling

@@ -57,7 +57,7 @@ module.exports = {
       logger.error(`Error in Report Message context menu: ${error.message}`);
       await interaction.reply({ 
         content: 'There was an error processing this command. Please try again later.', 
-        ephemeral: true 
+        flags: { ephemeral: true } 
       });
     }
   },
@@ -77,7 +77,7 @@ module.exports = {
       if (!messageData) {
         await interaction.reply({ 
           content: 'Could not find the reported message data. Please try again.', 
-          ephemeral: true 
+          flags: { ephemeral: true } 
         });
         return;
       }
@@ -100,7 +100,7 @@ module.exports = {
       if (!logChannel) {
         await interaction.reply({ 
           content: 'Thank you for your report. However, this server does not have a log channel set up yet. Your report has been recorded, but server moderators will not be notified.',
-          ephemeral: true 
+          flags: { ephemeral: true } 
         });
         return;
       }
@@ -157,7 +157,7 @@ module.exports = {
       // Acknowledge the report to the user
       await interaction.reply({ 
         content: 'Thank you for your report. The server moderators have been notified and will review the message.', 
-        ephemeral: true 
+        flags: { ephemeral: true } 
       });
       
       logger.info(`User ${interaction.user.tag} submitted a report for message ID: ${messageId}`);
@@ -167,7 +167,7 @@ module.exports = {
       
       await interaction.reply({ 
         content: 'There was an error submitting your report. Please try again later.', 
-        ephemeral: true 
+        flags: { ephemeral: true } 
       });
     }
   }

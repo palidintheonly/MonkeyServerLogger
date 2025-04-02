@@ -190,9 +190,13 @@ client.once('ready', async () => {
   
   // Set activity
   client.user.setPresence({
-    activities: [{ name: 'with Discord.js', type: ActivityType.Playing }],
+    activities: [{ name: 'with Loading Animations & Enhanced Logging | /help', type: ActivityType.Playing }],
     status: 'online'
   });
+  
+  // Initialize activeLoaders collection for tracking loading indicators
+  client.activeLoaders = new Map();
+  logger.info('Animated loading indicators initialized for interactive commands');
   
   // Log guilds the bot is in
   logger.info('Bot is in the following guilds:');
@@ -527,28 +531,28 @@ client.on('interactionCreate', async interaction => {
     logger.info(`Button interaction: ${interaction.customId} by ${interaction.user.tag}`);
     await interaction.reply({ 
       content: 'Button interactions are not implemented yet!', 
-      ephemeral: true 
+      flags: { ephemeral: true }
     });
-  } else if (interaction.isSelectMenu()) {
+  } else if (interaction.isStringSelectMenu()) {
     // Handle select menu interactions
     logger.info(`Select menu interaction: ${interaction.customId} by ${interaction.user.tag}`);
     await interaction.reply({ 
       content: 'Select menu interactions are not implemented yet!', 
-      ephemeral: true 
+      flags: { ephemeral: true }
     });
   } else if (interaction.isModalSubmit()) {
     // Handle modal submissions
     logger.info(`Modal submission: ${interaction.customId} by ${interaction.user.tag}`);
     await interaction.reply({ 
       content: 'Modal submissions are not implemented yet!', 
-      ephemeral: true 
+      flags: { ephemeral: true }
     });
   } else if (interaction.isContextMenuCommand()) {
     // Handle context menu commands
     logger.info(`Context menu command: ${interaction.commandName} by ${interaction.user.tag}`);
     await interaction.reply({ 
       content: 'Context menu commands are not implemented yet!', 
-      ephemeral: true 
+      flags: { ephemeral: true }
     });
   }
 });

@@ -30,7 +30,7 @@ module.exports = {
     if (!guildSettings.setupCompleted) {
       await interaction.reply({
         embeds: [createErrorEmbed('You need to set up the logging system first. Use `/setup` to get started.')],
-        ephemeral: true
+        flags: { ephemeral: true }
       });
       return;
     }
@@ -41,7 +41,7 @@ module.exports = {
     if (!config.logging.categories[category]) {
       await interaction.reply({
         embeds: [createErrorEmbed(`Invalid category: ${category}`)],
-        ephemeral: true
+        flags: { ephemeral: true }
       });
       return;
     }
@@ -50,7 +50,7 @@ module.exports = {
     if (guildSettings.isCategoryEnabled(category)) {
       await interaction.reply({
         embeds: [createErrorEmbed(`The ${config.logging.categories[category].name} category is already enabled.`)],
-        ephemeral: true
+        flags: { ephemeral: true }
       });
       return;
     }

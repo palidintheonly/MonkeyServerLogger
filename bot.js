@@ -36,10 +36,26 @@ const server = http.createServer((req, res) => {
   res.end('Discord bot is running!');
 });
 
-// Listen on port 3000 (mapped to external port 80)
-server.listen(3000, '0.0.0.0', () => {
-  logger.info('Health check server running on port 3000');
-});
+// Try multiple ports in case the default is in use
+const tryPort = (port) => {
+  server.once('error', err => {
+    if (err.code === 'EADDRINUSE') {
+      logger.warn(`Port ${port} is already in use, trying next port...`);
+      tryPort(port + 1);
+    } else {
+      logger.error(`Server error:`, err);
+    }
+  });
+  
+  server.once('listening', () => {
+    const address = server.address();
+    logger.info(`Health check server running on port ${address.port}`);
+  });
+  
+  server.listen(port, '0.0.0.0');
+};
+
+tryPort(9090); // Start with port 9090 which should be available
 
 // Command registration function
 async function registerCommands() {
@@ -194,6 +210,16 @@ async function init() {
     // Login to Discord
     const token = process.env.DISCORD_BOT_TOKEN || process.env.TOKEN;
     await client.login(token);
+    
+    // Initialize activeLoaders collection for tracking loading indicators
+    client.activeLoaders = new Collection();
+    logger.info('Animated loading indicators initialized for interactive commands');
+    
+    // Set bot status message
+    client.user.setPresence({
+      activities: [{ name: 'with Loading Animations & Enhanced Logging | /help', type: 0 }],
+      status: 'online'
+    });
     
     logger.info('Bot initialization completed');
   } catch (error) {

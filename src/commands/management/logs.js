@@ -3,9 +3,13 @@ const { createEmbed, createErrorEmbed, createSuccessEmbed } = require('../../uti
 const { logger } = require('../../utils/logger');
 const { models } = require('../../database/db');
 const config = require('../../config');
+const { LoadingIndicator } = require('../../utils/loadingIndicator');
 
 module.exports = {
   cooldown: config.cooldowns.management,
+  // Custom properties for loading indicators
+  loadingStyle: 'dots',
+  loadingColor: 'blue',
   data: new SlashCommandBuilder()
     .setName('logs')
     .setDescription('Configure log categories and channels')
@@ -64,7 +68,7 @@ module.exports = {
     if (!guildSettings.setupCompleted) {
       await interaction.reply({
         embeds: [createErrorEmbed('You need to set up the logging system first. Use `/setup` to get started.')],
-        ephemeral: true
+        flags: { ephemeral: true }
       });
       return;
     }
@@ -159,7 +163,7 @@ module.exports = {
     if (!config.logging.categories[category]) {
       await interaction.reply({
         embeds: [createErrorEmbed(`Invalid category: ${category}`)],
-        ephemeral: true
+        flags: { ephemeral: true }
       });
       return;
     }
@@ -195,7 +199,7 @@ module.exports = {
       
       await interaction.followUp({
         embeds: [createErrorEmbed(`Could not send a test message to ${channel}. Please check the bot's permissions.`)],
-        ephemeral: true
+        flags: { ephemeral: true }
       });
     }
   },
@@ -212,7 +216,7 @@ module.exports = {
     if (!config.logging.categories[category]) {
       await interaction.reply({
         embeds: [createErrorEmbed(`Invalid category: ${category}`)],
-        ephemeral: true
+        flags: { ephemeral: true }
       });
       return;
     }
@@ -221,7 +225,7 @@ module.exports = {
     if (!guildSettings.loggingChannelId) {
       await interaction.reply({
         embeds: [createErrorEmbed('No main logging channel set. Please run `/setup` first.')],
-        ephemeral: true
+        flags: { ephemeral: true }
       });
       return;
     }
@@ -232,7 +236,7 @@ module.exports = {
     if (!mainChannel) {
       await interaction.reply({
         embeds: [createErrorEmbed('The main logging channel could not be found. Please run `/setup` again.')],
-        ephemeral: true
+        flags: { ephemeral: true }
       });
       return;
     }
@@ -287,7 +291,7 @@ module.exports = {
           ]
         })],
         components: [selectRow],
-        ephemeral: true
+        flags: { ephemeral: true }
       });
     }
   },
@@ -300,6 +304,16 @@ module.exports = {
   async handleSelectMenu(interaction, client) {
     if (interaction.customId === 'logs-toggle-categories') {
       await interaction.deferUpdate();
+      
+      // Create a loading indicator for category toggle
+      const loader = new LoadingIndicator({
+        text: "Updating log categories...",
+        style: this.loadingStyle || "dots",
+        color: this.loadingColor || "blue"
+      });
+      
+      // Start the loader
+      await loader.start(interaction);
       
       // Get guild settings
       const guildSettings = await models.Guild.findOrCreateGuild(interaction.guild.id);
@@ -340,9 +354,12 @@ module.exports = {
         embed.addFields({ name: '❌ Disabled Categories', value: disabledList, inline: true });
       }
       
-      await interaction.editReply({
+      // Stop the loader with success state
+      await loader.stop({
+        text: "Log categories have been updated!",
         embeds: [embed],
-        components: []
+        components: [],
+        success: true
       });
     }
   }

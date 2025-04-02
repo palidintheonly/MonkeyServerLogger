@@ -18,7 +18,7 @@ module.exports = {
     if (!guildSettings.setupCompleted) {
       await interaction.reply({
         embeds: [createErrorEmbed('You need to set up the logging system first. Use `/setup` to get started.')],
-        ephemeral: true
+        flags: { ephemeral: true }
       });
       return;
     }
