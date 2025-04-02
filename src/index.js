@@ -308,15 +308,73 @@ process.on('uncaughtException', error => {
 });
 
 // Add basic HTTP server to keep deployment healthy
-const http = require('http');
-const server = http.createServer((req, res) => {
-  res.writeHead(200);
-  res.end('Discord bot is running!');
-});
+// We'll only run the HTTP server on the primary process to avoid port conflicts
+// For ShardingManager, this means only run on the manager process, not the shards
 
-server.listen(3000, '0.0.0.0', () => {
-  logger.info('Health check server running on port 3000');
-});
+// In a sharded environment, we need to be very careful with detecting if we're the first shard
+let shouldRunHttpServer = false;
+
+// First check if we're running in the ShardingManager (not a shard)
+if (!isSharded) {
+  shouldRunHttpServer = true;
+  logger.info('Running as standalone client, will start HTTP server');
+} else {
+  // We're a shard, check if we're shard 0
+  try {
+    // Attempt to extract shard ID directly from client
+    const currentShardId = client.shard?.ids[0];
+    
+    if (currentShardId === 0) {
+      shouldRunHttpServer = true;
+      logger.info('Running as shard 0, will start HTTP server');
+    } else {
+      logger.info(`Running as shard ${currentShardId}, will NOT start HTTP server`);
+    }
+  } catch (error) {
+    logger.warn('Failed to determine shard ID, will NOT start HTTP server:', error);
+  }
+}
+
+// Only run the HTTP server if we determined this is the right process
+if (shouldRunHttpServer) {
+  // Delay starting HTTP server until after client is ready to ensure we don't have port conflicts
+  client.once(Events.ClientReady, () => {
+    const http = require('http');
+    const server = http.createServer((req, res) => {
+      res.writeHead(200);
+      res.end(`Discord bot is running! ${isSharded ? `(Shard ${client.shard?.ids[0] || 0})` : ''}`);
+    });
+
+    // Use a try-catch to handle potential EADDRINUSE errors
+    try {
+      server.listen(5000, '0.0.0.0', () => {
+        logger.info('Health check server running on port 5000');
+      });
+      
+      // Handle HTTP server errors
+      server.on('error', (error) => {
+        logger.error('HTTP server error:', error);
+        
+        if (error.code === 'EADDRINUSE') {
+          logger.warn('Port 5000 is already in use, health check server will not start');
+          
+          // Try an alternative port
+          try {
+            server.listen(8080, '0.0.0.0', () => {
+              logger.info('Health check server running on alternative port 8080');
+            });
+          } catch (fallbackError) {
+            logger.error('Failed to start HTTP server on fallback port:', fallbackError);
+          }
+        }
+      });
+    } catch (error) {
+      logger.error('Failed to start HTTP server:', error);
+    }
+  });
+} else {
+  logger.info('Skipping health check server on this process to avoid port conflicts');
+}
 
 // Start the bot
 init();

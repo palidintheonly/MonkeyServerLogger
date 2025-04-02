@@ -181,6 +181,73 @@ module.exports = {
     
     // Handle select menus
     else if (interaction.isStringSelectMenu()) {
+      // Handle modmail server selection
+      if (interaction.customId === 'modmail_server_select') {
+        try {
+          // Get the selected guild ID
+          const selectedGuildId = interaction.values[0];
+          const guild = client.guilds.cache.get(selectedGuildId);
+          
+          if (!guild) {
+            logger.error(`Selected guild ${selectedGuildId} not found`);
+            await interaction.update({
+              content: 'The selected server was not found. Please try contacting a different server.',
+              components: [],
+              embeds: []
+            });
+            return;
+          }
+          
+          // Get the pending message
+          const pendingMessage = client.pendingModmailMessages.get(interaction.user.id);
+          if (!pendingMessage) {
+            logger.warn(`No pending message found for user ${interaction.user.tag}`);
+            await interaction.update({
+              content: 'Your message has expired. Please send a new message to start a modmail thread.',
+              components: [],
+              embeds: []
+            });
+            return;
+          }
+          
+          // Update the interaction to acknowledge the selection
+          await interaction.update({
+            content: `You've selected to contact **${guild.name}**. Your message has been forwarded to their staff team.`,
+            components: [],
+            embeds: []
+          });
+          
+          // Get the modmail handler
+          const modmailHandlerFile = require('./directMessageCreate.js');
+          if (!modmailHandlerFile.processModmail) {
+            logger.error('Modmail processModmail method not found');
+            return;
+          }
+          
+          // Get the original message that triggered the modmail
+          const pendingData = client.pendingModmailMessages.get(interaction.user.id);
+          const originalMessage = interaction.message.reference?.messageId 
+            ? await interaction.channel.messages.fetch(interaction.message.reference.messageId).catch(() => null)
+            : interaction.message;
+            
+          // Process the modmail with the selected guild
+          const isNewConversation = !client.activeModmailThreads?.has(interaction.user.id);
+          await modmailHandlerFile.processModmail(originalMessage, client, guild, isNewConversation);
+          
+          // Clear the pending message
+          client.pendingModmailMessages.delete(interaction.user.id);
+          
+        } catch (error) {
+          logger.error(`Error handling modmail server selection: ${error.message}`);
+          await interaction.update({
+            content: 'There was an error processing your selection. Please try sending a new message.',
+            components: [],
+            embeds: []
+          });
+        }
+        return;
+      }
+      
       // Extract command name from customId (format: command-name-action)
       const [commandName] = interaction.customId.split('-');
       

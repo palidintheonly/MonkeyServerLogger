@@ -21,6 +21,7 @@ The bot logs all server activities including:
   - Creates a logging channel
   - Configures which log categories to enable
   - Sets up the logging system
+  - Optional modmail setup
 
 #### Management Commands
 - `/enable`: Enable specific logging categories
@@ -28,17 +29,29 @@ The bot logs all server activities including:
 - `/ignore`: Configure channels or roles to be ignored by the logging system
 - `/categories`: View and manage logging categories
 - `/logs`: Configure logging channels for different categories
+- `/modmail`: Manage modmail threads (reply, close, block, unblock)
 
 #### Information Commands
 - `/help`: Display help information and command usage
 - `/ping`: Check the bot's latency
 - `/stats`: View bot statistics
 
+### 📬 Modmail System
+
+The bot includes a modmail system that allows server members to contact staff through direct messages:
+
+- **Server Selection**: If a user is in multiple servers with modmail enabled, they will be prompted to select which server they want to contact
+- **Auto-Closing**: Modmail threads automatically close after 1 minute of inactivity
+- **Inactivity Warnings**: Users and staff receive warnings at 30 seconds and 10 seconds before a thread is closed
+- **Closure Notification**: Users are notified when their thread is closed
+- **Staff Control**: Staff can reply to modmail threads, close them manually, and block/unblock users
+
 ### 🔧 Configuration Options
 
 - **Per-Category Logging**: Direct different event types to separate channels
 - **Ignore Filters**: Exclude specific channels or roles from logging
 - **Customizable Permissions**: Limit access to log commands
+- **Modmail Settings**: Enable/disable modmail functionality per server
 
 ## Setup Instructions
 
@@ -47,6 +60,7 @@ The bot logs all server activities including:
 3. **Configure Categories**: Select which log categories to enable
 4. **Set Up Channels**: Optionally configure separate channels for different log categories
 5. **Set Ignore Rules**: Configure channels or roles to ignore if needed
+6. **Enable Modmail**: Enable the modmail system if desired during setup or later using the setup command
 
 ## Command Usage Examples
 
@@ -73,6 +87,15 @@ Example: `/ignore channel #bot-commands`
 /help [command]
 ```
 Example: `/help logs`
+
+### Modmail Commands
+```
+/modmail reply [message]
+/modmail close [reason]
+/modmail block [user] [reason]
+/modmail unblock [user]
+```
+Example: `/modmail reply Thanks for contacting us!`
 
 ## Hosting Information
 

@@ -248,8 +248,26 @@ module.exports = {
       
       await interaction.reply({ embeds: [closedEmbed] });
       
-      // Remove from active threads
-      client.activeModmailThreads.delete(userId);
+      // Get the directMessageCreate event handler to clear any timers
+      const directMessageHandler = require('../../events/client/directMessageCreate.js');
+      if (directMessageHandler.resetAutoCloseTimer) {
+        directMessageHandler.resetAutoCloseTimer(userId, client);
+      }
+      
+      // Update thread status to closed
+      if (client.activeModmailThreads.has(userId)) {
+        const threadInfo = client.activeModmailThreads.get(userId);
+        threadInfo.status = 'closed';
+        client.activeModmailThreads.set(userId, threadInfo);
+        
+        // Then remove from active threads
+        setTimeout(() => {
+          client.activeModmailThreads.delete(userId);
+        }, 1000); // Small delay to ensure status update is processed
+      } else {
+        // If thread not found, just remove directly
+        client.activeModmailThreads.delete(userId);
+      }
       
       // Archive the channel (optional, depends on preference)
       // Alternatively, you could delete it after a certain time
@@ -498,6 +516,21 @@ module.exports = {
         });
         
         await interaction.reply({ embeds: [staffEmbed] });
+        
+        // Update thread last activity and reset auto-close timer
+        if (client.activeModmailThreads.has(userId)) {
+          const threadInfo = client.activeModmailThreads.get(userId);
+          threadInfo.lastActivity = new Date();
+          client.activeModmailThreads.set(userId, threadInfo);
+          
+          // Get the directMessageCreate event handler to reset timers
+          const directMessageHandler = require('../../events/client/directMessageCreate.js');
+          if (directMessageHandler.resetAutoCloseTimer) {
+            directMessageHandler.resetAutoCloseTimer(userId, client);
+            directMessageHandler.setupAutoCloseTimer(userId, client);
+            logger.info(`Reset auto-close timer for modmail thread with ${user.tag} (${userId})`);
+          }
+        }
         
         logger.info(`Staff ${interaction.user.tag} sent modmail reply to ${user.tag} (${userId})`);
         
