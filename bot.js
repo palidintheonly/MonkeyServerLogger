@@ -185,9 +185,25 @@ async function registerCommands(forceReload = false) {
         const commandName = command.data.name;
         if (!commandNames.has(commandName)) {
           commandNames.add(commandName);
-          commands.push(command.data.toJSON());
+          
+          // Special handling for context menu commands - remove description
+          const commandJson = command.data.toJSON();
+          // Check the command type (2 is user, 3 is message)
+          const commandType = commandJson.type === 2 ? 'User' : commandJson.type === 3 ? 'Message' : 'Unknown';
+          
+          // Remove the description field as it's not needed for context menu commands
+          // and will cause Discord API to reject the command
+          if (commandJson.type === 2 || commandJson.type === 3) {
+            // Make sure to remove description before sending to Discord API
+            const { description, ...commandWithoutDescription } = commandJson;
+            commands.push(commandWithoutDescription);
+            logger.info(`Loaded context command: ${commandName} (${commandType})`);
+          } else {
+            commands.push(commandJson);
+            logger.info(`Loaded context command: ${commandName}`);
+          }
+          
           client.contextCommands.set(commandName, command);
-          logger.info(`Loaded context command: ${commandName}`);
         }
       }
     }
@@ -310,25 +326,105 @@ async function registerCommands(forceReload = false) {
     
     // STEP 3: Register all commands from scratch
     logger.info('Registering all commands from scratch...');
-    const data = await rest.put(
-      Routes.applicationCommands(clientId),
-      { body: commands }
-    );
     
-    logger.info(`Successfully reloaded ${data.length} application commands`);
-    console.log(`SUCCESS: Registered ${data.length} commands with Discord API`);
+    // Run command structure diagnostics before registration
+    logger.info('Running command structure diagnostics before registration...');
+    const diagnosticResult = diagnoseCommandData(commands);
     
-    // Log each registered command name for debugging
-    data.forEach(cmd => {
-      logger.debug(`Registered command: ${cmd.name}${cmd.options ? ' (with options)' : ''}`);
+    if (!diagnosticResult) {
+      logger.warn('Command diagnostics detected issues - registration might fail');
+      console.log('WARNING: Command structure validation found issues - see logs for details');
+    } else {
+      logger.info('Command diagnostics complete - all commands appear valid');
+    }
+    
+    // Log summary of commands for registration
+    logger.info(`Prepared ${commands.length} commands for registration`);
+    commands.forEach(cmd => {
+      const cmdDetails = {
+        name: cmd.name,
+        description: cmd.description,
+        options_count: cmd.options?.length || 0,
+        has_subcommands: cmd.options && cmd.options.some(opt => opt.type === 1)
+      };
+      logger.info(`Command details: ${JSON.stringify(cmdDetails)}`);
+      
+      // Log detailed subcommand information for each command with subcommands
+      if (cmd.options && cmd.options.some(opt => opt.type === 1)) {
+        logger.info(`Subcommands for ${cmd.name}:`);
+        cmd.options.filter(opt => opt.type === 1).forEach(sc => {
+          logger.info(`  - ${sc.name}: ${sc.description} (options: ${sc.options?.length || 0})`);
+        });
+      }
     });
+    
+    try {
+      const data = await rest.put(
+        Routes.applicationCommands(clientId),
+        { body: commands }
+      );
+      
+      logger.info(`Successfully reloaded ${data.length} application commands`);
+      console.log(`SUCCESS: Registered ${data.length} commands with Discord API`);
+      
+      // Log each registered command name for debugging
+      data.forEach(cmd => {
+        const subcommandCount = cmd.options?.filter(opt => opt.type === 1).length || 0;
+        logger.debug(`Registered command: ${cmd.name}${subcommandCount > 0 ? ` (with ${subcommandCount} subcommands)` : ''}`);
+      });
+    } catch (registrationError) {
+      logger.error(`Command registration error details: ${JSON.stringify(registrationError)}`);
+      // Attempt registration one by one if bulk registration fails
+      logger.warn('Bulk registration failed, attempting to register commands one by one...');
+      
+      const registeredCommands = [];
+      for (const command of commands) {
+        try {
+          logger.info(`Registering individual command: ${command.name}`);
+          const registeredCommand = await rest.post(
+            Routes.applicationCommands(clientId),
+            { body: command }
+          );
+          registeredCommands.push(registeredCommand);
+          logger.info(`Successfully registered command: ${command.name}`);
+        } catch (error) {
+          logger.error(`Failed to register command ${command.name}: ${error.message}`);
+        }
+        // Add a slight delay between registrations to avoid rate limits
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+      
+      logger.info(`Registered ${registeredCommands.length} commands individually`);
+      throw registrationError; // Re-throw the original error to be handled by the caller
+    }
     
     return true; // Return true to indicate success
   } catch (error) {
-    // Log error but don't fail hard - allow bot to continue
-    console.log(`Command registration error: ${error.message} - The bot will continue running`);
-    logger.warn(`Error registering commands: ${error.message}`);
-    logger.warn('Bot will continue to function, but commands may need to be manually registered later');
+    // Enhanced error handling with detailed logging
+    logger.error(`Command registration error: ${error.message}`);
+    
+    // Check for specific error types and log accordingly
+    if (error.code === 50035) {
+      logger.error('This appears to be an invalid command structure error from Discord API');
+      logger.error(`Invalid field details: ${JSON.stringify(error.errors || {})}`);
+      console.error('ERROR: Discord rejected the command structure - check for invalid options');
+    } else if (error.httpStatus === 429) {
+      logger.error('Rate limit exceeded during command registration');
+      logger.error(`Retry after: ${error.retry_after || 'Unknown'} seconds`);
+      console.error('ERROR: Discord rate limit exceeded - try again later');
+    } else if (error.httpStatus === 401) {
+      logger.error('Authentication failed when registering commands - token may be invalid');
+      console.error('ERROR: Discord rejected the bot token - check your DISCORD_BOT_TOKEN in Replit Secrets');
+    } else {
+      logger.error(`Unknown error type: ${error.code || 'No code'}, HTTP status: ${error.httpStatus || 'Unknown'}`);
+      logger.error(`Full error details: ${JSON.stringify(error)}`);
+      console.error(`ERROR: Command registration failed: ${error.message}`);
+    }
+    
+    // Continue running the bot despite the error
+    logger.warn('Bot will continue to function, but commands may not be properly registered with Discord');
+    console.log('The bot will continue running, but slash commands may not work correctly');
+    
     // Return true anyway to avoid stopping the bot
     return true;
   }
@@ -534,9 +630,100 @@ function setupCommandReloading() {
   }
 }
 
-// Export the registerCommands function so it can be used by other files
+/**
+ * Diagnose and validate command data before registration
+ * This function checks for common issues in command definitions
+ * @param {Array} commands - Array of command data objects
+ * @returns {boolean} - True if all commands are valid, false if issues found
+ */
+function diagnoseCommandData(commands) {
+  let isValid = true;
+  logger.info('Performing detailed command structure validation...');
+  
+  for (const command of commands) {
+    // Skip description validation for context menu commands (type 2 is USER, type 3 is MESSAGE)
+    const isContextCommand = command.type === 2 || command.type === 3;
+    
+    // Check basic command properties (context commands don't need description)
+    if (!command.name || (!isContextCommand && !command.description)) {
+      logger.error(`Invalid command missing required properties: ${JSON.stringify(command)}`);
+      isValid = false;
+      continue;
+    }
+    
+    const commandType = isContextCommand 
+      ? (command.type === 2 ? 'USER_CONTEXT' : 'MESSAGE_CONTEXT')
+      : 'CHAT_INPUT';
+    
+    logger.info(`Validating command: ${command.name} (type: ${commandType})`);
+    
+    // Check if the command has options
+    if (command.options && command.options.length > 0) {
+      // Check for commands with subcommands (type 1)
+      const hasSubcommands = command.options.some(opt => opt.type === 1);
+      const subcommands = command.options.filter(opt => opt.type === 1);
+      
+      if (hasSubcommands) {
+        logger.info(`Command ${command.name} has ${subcommands.length} subcommands`);
+        
+        // Validate each subcommand
+        for (const subcommand of subcommands) {
+          if (!subcommand.name || !subcommand.description) {
+            logger.error(`Subcommand for ${command.name} is missing name or description: ${JSON.stringify(subcommand)}`);
+            isValid = false;
+            continue;
+          }
+          
+          logger.info(`  Subcommand: ${subcommand.name}`);
+          
+          // Check if the subcommand has options
+          if (subcommand.options && subcommand.options.length > 0) {
+            for (const option of subcommand.options) {
+              if (!option.name || !option.description || option.type === undefined) {
+                logger.error(`Invalid option in subcommand ${subcommand.name}: ${JSON.stringify(option)}`);
+                isValid = false;
+                continue;
+              }
+              
+              // Log option details for debugging
+              logger.info(`    Option: ${option.name} (type: ${option.type}, required: ${option.required || false})`);
+              
+              // Check if option type is valid (should be 3=string, 4=integer, 5=boolean, 6=user, 7=channel, etc.)
+              if (![3, 4, 5, 6, 7, 8, 9, 10, 11].includes(option.type)) {
+                logger.warn(`Unusual option type ${option.type} in ${subcommand.name}.${option.name}`);
+              }
+            }
+          }
+        }
+      } else {
+        // Regular command with options (no subcommands)
+        for (const option of command.options) {
+          if (!option.name || !option.description || option.type === undefined) {
+            logger.error(`Invalid option in command ${command.name}: ${JSON.stringify(option)}`);
+            isValid = false;
+            continue;
+          }
+          
+          // Log option details for debugging
+          logger.info(`  Option: ${option.name} (type: ${option.type}, required: ${option.required || false})`);
+        }
+      }
+    }
+  }
+  
+  if (isValid) {
+    logger.info('All commands passed structure validation');
+  } else {
+    logger.error('Command validation failed - see logs above for details');
+  }
+  
+  return isValid;
+}
+
+// Export the registerCommands function and other utilities so they can be used by other files
 module.exports = {
-  registerCommands
+  registerCommands,
+  diagnoseCommandData
 };
 
 // Start the bot

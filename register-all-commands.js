@@ -1,11 +1,13 @@
 /**
- * Discord-Friendly Command Registration Script
+ * Complete Command Registration Script for All Command Types
  * 
- * This script properly handles Discord API rate limits for:
- * 1. Deleting existing application commands
- * 2. Registering the new commands from src/new_commands directory
+ * This script properly handles registration of all command types:
+ * - Regular slash commands
+ * - Slash commands with subcommands
+ * - User context menu commands
+ * - Message context menu commands
  * 
- * Run with: node register-commands-safe.js
+ * Run with: node register-all-commands.js
  */
 require('dotenv').config();
 const fs = require('fs');
@@ -29,11 +31,11 @@ if (!clientId) {
   process.exit(1);
 }
 
-// Configure REST client with generous timeout
-const rest = new REST({ version: '10', timeout: 120000 }).setToken(token);
+// Configure REST client
+const rest = new REST({ version: '10' }).setToken(token);
 
-console.log('Discord Safe Command Registration Utility');
-console.log('=======================================');
+console.log('Complete Discord Command Registration Utility');
+console.log('===========================================');
 console.log(`Token available: ${!!token}, Token length: ${token.length}`);
 console.log(`Client ID available: ${!!clientId}, Client ID: ${clientId}`);
 
@@ -41,119 +43,10 @@ console.log(`Client ID available: ${!!clientId}, Client ID: ${clientId}`);
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
- * Execute a function with enhanced retry logic for rate limits and timeouts
- * @param {Function} fn - Function to execute
- * @param {string} operation - Name of operation for logging
- * @param {number} maxRetries - Maximum number of retries
- * @returns {Promise<any>} - Result of the function
- */
-async function executeWithRateLimitHandling(fn, operation, maxRetries = 7) {
-  let retries = 0;
-  let lastError = null;
-  
-  while (retries < maxRetries) {
-    try {
-      console.log(`Attempting ${operation}... (attempt ${retries + 1}/${maxRetries})`);
-      return await fn();
-    } catch (error) {
-      lastError = error;
-      console.warn(`Error during ${operation}: ${error.message}`);
-      
-      // Check if this is a rate limit error
-      if (error.code === 429) {
-        const resetAfter = error.headers?.get('X-RateLimit-Reset-After') || 5;
-        const waitTime = Math.ceil(resetAfter * 1000) + 500;
-        console.warn(`Rate limited! Waiting ${waitTime}ms before retry...`);
-        await sleep(waitTime);
-      } else {
-        // Exponential backoff for other errors
-        const waitTime = Math.min(1000 * Math.pow(2, retries), 60000);
-        console.warn(`Waiting ${waitTime}ms before retry...`);
-        await sleep(waitTime);
-      }
-      
-      retries++;
-    }
-  }
-  
-  throw new Error(`Failed ${operation} after ${maxRetries} attempts: ${lastError?.message}`);
-}
-
-/**
- * Delete a Discord application command safely with rate limit handling
- * @param {string} commandId - Discord command ID
- * @param {string} commandName - Command name for logging
- */
-async function safelyDeleteCommand(commandId, commandName) {
-  await executeWithRateLimitHandling(
-    () => rest.delete(Routes.applicationCommand(clientId, commandId)),
-    `deleting command ${commandName} (${commandId})`
-  );
-  console.log(`✅ Successfully deleted command: ${commandName}`);
-  
-  // Small delay between deletes to avoid rate limits
-  await sleep(1000);
-}
-
-/**
- * Safely fetch all registered application commands
- * @returns {Promise<Array>} Array of command objects
- */
-async function safelyFetchCommands() {
-  return executeWithRateLimitHandling(
-    () => rest.get(Routes.applicationCommands(clientId)),
-    'fetching registered commands'
-  );
-}
-
-/**
- * Register application commands one by one with rate limit handling
- * @param {Array} commands - Array of command data
- * @returns {Promise<Array>} Registered commands
- */
-async function safelyRegisterCommands(commands) {
-  const registeredCommands = [];
-  
-  // Process context menu commands separately
-  const processedCommands = commands.map(cmd => {
-    // For context menu commands (type 2 or 3), ensure they don't have a description field
-    if (cmd.type === ApplicationCommandType.User || cmd.type === ApplicationCommandType.Message) {
-      const { description, ...rest } = cmd;
-      return rest;
-    }
-    return cmd;
-  });
-  
-  for (const [index, command] of processedCommands.entries()) {
-    try {
-      console.log(`Registering command ${index + 1}/${processedCommands.length}: ${command.name}`);
-      
-      const registered = await executeWithRateLimitHandling(
-        () => rest.post(Routes.applicationCommands(clientId), { body: command }),
-        `registering command ${command.name}`
-      );
-      
-      registeredCommands.push(registered);
-      console.log(`✅ Successfully registered: ${command.name}`);
-      
-      // Small delay between registrations
-      if (index < processedCommands.length - 1) {
-        await sleep(1500);
-      }
-    } catch (error) {
-      console.error(`Failed to register ${command.name}: ${error.message}`);
-      console.error('Command data:', JSON.stringify(command, null, 2));
-    }
-  }
-  
-  return registeredCommands;
-}
-
-/**
- * Load command files from the src/commands directory
+ * Load command files from directories
  * @returns {Array} Array of command data objects
  */
-function loadAllCommands() {
+function loadCommands() {
   const commands = [];
   const contextCommands = [];
   
@@ -276,75 +169,130 @@ function loadAllCommands() {
 }
 
 /**
- * Print detailed information about registered commands
- * @param {Array} commands - Array of command objects
+ * Delete all existing application commands
+ * @returns {Promise<void>}
  */
-function printCommandDetails(commands) {
-  console.log('\n📋 Registered Commands Summary:');
-  console.log('==============================');
+async function deleteExistingCommands() {
+  console.log('\n🗑️ Retrieving and deleting existing commands...');
   
-  // Group commands by type
-  const slashCommands = commands.filter(cmd => !cmd.type || cmd.type === ApplicationCommandType.ChatInput);
-  const contextCommands = commands.filter(cmd => cmd.type === ApplicationCommandType.User || cmd.type === ApplicationCommandType.Message);
-  
-  // Print slash commands
-  console.log(`\n💻 Slash Commands (${slashCommands.length}):`);
-  slashCommands.forEach(cmd => {
-    const subcommands = cmd.options?.filter(opt => opt.type === 1);
-    if (subcommands && subcommands.length > 0) {
-      console.log(`📎 ${cmd.name}`);
-      subcommands.forEach(sc => {
-        console.log(`  ├─ ${sc.name}: ${sc.description}`);
-      });
-    } else {
-      console.log(`📄 ${cmd.name}: ${cmd.description}`);
+  try {
+    const existingCommands = await rest.get(Routes.applicationCommands(clientId));
+    console.log(`Found ${existingCommands.length} existing commands`);
+    
+    for (const cmd of existingCommands) {
+      console.log(`Deleting command: ${cmd.name} (ID: ${cmd.id})`);
+      await rest.delete(Routes.applicationCommand(clientId, cmd.id));
+      console.log(`✅ Deleted ${cmd.name}`);
+      
+      // Add a small delay between deletions
+      await sleep(1000);
     }
-  });
-  
-  // Print context commands
-  if (contextCommands.length > 0) {
-    console.log(`\n🔍 Context Menu Commands (${contextCommands.length}):`);
-    contextCommands.forEach(cmd => {
-      if (cmd.type === ApplicationCommandType.User) {
-        console.log(`👤 ${cmd.name} (User)`);
-      } else {
-        console.log(`💬 ${cmd.name} (Message)`);
-      }
-    });
+    
+    // Additional delay for Discord's cache to clear
+    console.log('Waiting 5 seconds for Discord API cache to update...');
+    await sleep(5000);
+    
+    return existingCommands.length;
+  } catch (error) {
+    console.error(`Failed to delete commands: ${error.message}`);
+    return 0;
   }
 }
 
+/**
+ * Register commands with Discord API
+ * @param {Array} commands Commands to register
+ */
+async function registerCommands(commands) {
+  console.log(`\n📝 Registering ${commands.length} commands with Discord API...`);
+  
+  // Convert context commands to proper format for Discord API
+  const processedCommands = commands.map(cmd => {
+    // For context menu commands (type 2 or 3), ensure they don't have a description field
+    // Discord API rejects context commands with a description field
+    if (cmd.type === ApplicationCommandType.User || cmd.type === ApplicationCommandType.Message) {
+      const { description, ...rest } = cmd;
+      return rest;
+    }
+    return cmd;
+  });
+  
+  try {
+    // Attempt bulk registration
+    console.log('Attempting bulk registration...');
+    const data = await rest.put(
+      Routes.applicationCommands(clientId),
+      { body: processedCommands }
+    );
+    
+    console.log(`✅ Successfully registered ${data.length} commands in bulk`);
+    
+    // Print a summary of registered commands
+    console.log('\n📋 Registered Commands Summary:');
+    console.log('==============================');
+    
+    data.forEach(cmd => {
+      if (cmd.type === ApplicationCommandType.ChatInput) {
+        // Regular slash command
+        const subcommands = cmd.options?.filter(opt => opt.type === 1);
+        if (subcommands && subcommands.length > 0) {
+          console.log(`📎 ${cmd.name} (with ${subcommands.length} subcommands: ${subcommands.map(sc => sc.name).join(', ')})`);
+        } else {
+          console.log(`📄 ${cmd.name}`);
+        }
+      } else if (cmd.type === ApplicationCommandType.User) {
+        console.log(`👤 ${cmd.name} (User Context Menu)`);
+      } else if (cmd.type === ApplicationCommandType.Message) {
+        console.log(`💬 ${cmd.name} (Message Context Menu)`);
+      }
+    });
+    
+    return data;
+  } catch (error) {
+    console.error(`❌ Bulk registration failed: ${error.message}`);
+    console.log('\n🔄 Attempting to register commands individually...');
+    
+    // Try one by one as fallback
+    const registeredCommands = [];
+    for (const command of processedCommands) {
+      try {
+        console.log(`Registering command: ${command.name}...`);
+        const registeredCommand = await rest.post(
+          Routes.applicationCommands(clientId),
+          { body: command }
+        );
+        
+        registeredCommands.push(registeredCommand);
+        console.log(`✅ Successfully registered: ${command.name}`);
+      } catch (error) {
+        console.error(`❌ Failed to register ${command.name}: ${error.message}`);
+      }
+      
+      // Add a delay between registrations
+      await sleep(1500);
+    }
+    
+    return registeredCommands;
+  }
+}
+
+// Main function
 async function main() {
   try {
-    console.log('\n🚀 Starting safe command registration process...');
+    console.log('\n🚀 Starting command registration process...');
     
     // Step 1: Load all commands
-    const commands = loadAllCommands();
+    const commands = loadCommands();
     if (commands.length === 0) {
       console.error('❌ No valid commands found to register!');
       process.exit(1);
     }
     
     // Step 2: Delete existing commands
-    console.log('\n🗑️ Retrieving existing commands...');
-    const existingCommands = await safelyFetchCommands();
-    console.log(`Found ${existingCommands.length} existing commands`);
-    
-    for (const cmd of existingCommands) {
-      await safelyDeleteCommand(cmd.id, cmd.name);
-    }
-    
-    // Wait a bit for Discord to process the deletions
-    if (existingCommands.length > 0) {
-      console.log('Waiting for Discord API cache to update...');
-      await sleep(3000);
-    }
+    await deleteExistingCommands();
     
     // Step 3: Register commands
-    console.log(`\n📝 Registering ${commands.length} commands with Discord API...`);
-    const registeredCommands = await safelyRegisterCommands(commands);
-    
-    printCommandDetails(registeredCommands);
+    const registeredCommands = await registerCommands(commands);
     
     console.log(`\n✅ Command registration completed successfully: ${registeredCommands.length} commands registered.`);
     process.exit(0);

@@ -5,7 +5,9 @@ const { logger } = require('../../utils/logger');
 module.exports = {
   data: new ContextMenuCommandBuilder()
     .setName('User Info')
-    .setType(ApplicationCommandType.User),
+    .setType(ApplicationCommandType.User)
+    .setDMPermission(false),
+  description: 'View detailed information about a user',
   
   async execute(interaction, client) {
     try {

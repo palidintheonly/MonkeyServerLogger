@@ -4,7 +4,9 @@ const { logger } = require('../../utils/logger');
 module.exports = {
   data: new ContextMenuCommandBuilder()
     .setName('Report Message')
-    .setType(ApplicationCommandType.Message),
+    .setType(ApplicationCommandType.Message)
+    .setDMPermission(false),
+  description: 'Report a message to server moderators',
   
   async execute(interaction, client) {
     try {
