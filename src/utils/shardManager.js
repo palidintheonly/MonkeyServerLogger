@@ -4,7 +4,13 @@ const { logger } = require('./logger');
 const path = require('path');
 const { REST } = require('@discordjs/rest');
 
-// Initialize REST API with token
+// Validate token
+if (!process.env.TOKEN) {
+  logger.error('Discord bot TOKEN is missing! Please add it to your environment variables.');
+  process.exit(1);
+}
+
+// Initialize REST API with token 
 const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
 
 // Custom function to calculate number of shards based on guild count
