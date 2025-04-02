@@ -112,7 +112,7 @@ function isAuthenticated(req, res, next) {
 
 // Helper function to check if user is the owner
 function isOwner(req, res, next) {
-  if (req.isAuthenticated() && req.user.id === OWNER_ID) {
+  if (req.isAuthenticated() && req.user && req.user.id === OWNER_ID) {
     return next();
   }
   res.redirect('/unauthorized');
@@ -183,6 +183,9 @@ app.get('/login', (req, res) => {
 });
 
 app.get('/unauthorized', (req, res) => {
+  // Get username with fallback
+  const username = req.user && req.user.username ? req.user.username : 'Guest';
+  
   res.send(`
     <html>
       <head>
@@ -232,7 +235,7 @@ app.get('/unauthorized', (req, res) => {
       <body>
         <div class="container">
           <h1>Admin Access Only</h1>
-          <p>This section is only available to the bot owner. You are logged in as ${req.user.username}, but you do not have admin privileges.</p>
+          <p>This section is only available to the bot owner. You are logged in as ${username}, but you do not have admin privileges.</p>
           <a href="/" class="button">Back to Dashboard</a>
         </div>
       </body>
@@ -318,6 +321,9 @@ app.get('/logout', (req, res) => {
 
 // Admin dashboard route (requires owner)
 app.get('/admin', isOwner, (req, res) => {
+  // Get username, with fallback if user is undefined
+  const username = req.user && req.user.username ? req.user.username : 'Admin';
+  
   // Using formatUptime directly with client.uptime
   res.send(`
     <html>
@@ -452,7 +458,7 @@ app.get('/admin', isOwner, (req, res) => {
           <div class="card">
             <h2 class="card-title">Bot Status</h2>
             <span class="status online">Online</span>
-            <p>Welcome back, ${req.user.username}! <span class="owner-badge">Owner</span></p>
+            <p>Welcome back, ${username}! <span class="owner-badge">Owner</span></p>
             <p>You have full administrative access to the bot.</p>
           </div>
           
@@ -494,6 +500,11 @@ app.get('/admin', isOwner, (req, res) => {
 
 // Main dashboard page (requires login)
 app.get('/', isAuthenticated, (req, res) => {
+  // Safety check for user
+  if (!req.user) {
+    return res.redirect('/login');
+  }
+  
   // If user is the owner, redirect to admin panel
   if (req.user.id === OWNER_ID) {
     return res.redirect('/admin');
