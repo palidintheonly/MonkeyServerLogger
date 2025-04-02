@@ -1,0 +1,6 @@
+CREATE TABLE `dashboard_users` (`id` VARCHAR(255) NOT NULL PRIMARY KEY, `username` VARCHAR(255) NOT NULL, `discriminator` VARCHAR(255), `avatar` VARCHAR(255), `accessLevel` VARCHAR(255) NOT NULL DEFAULT 'guest', `lastLogin` DATETIME NOT NULL, `accessToken` VARCHAR(255), `refreshToken` VARCHAR(255), `preferences` TEXT, `createdAt` DATETIME NOT NULL, `updatedAt` DATETIME NOT NULL);
+CREATE TABLE `audit_logs` (`id` INTEGER PRIMARY KEY AUTOINCREMENT, `action` VARCHAR(255) NOT NULL, `category` VARCHAR(255) NOT NULL, `target` VARCHAR(255), `details` TEXT, `ipAddress` VARCHAR(255), `userAgent` VARCHAR(255), `createdAt` DATETIME NOT NULL, `updatedAt` DATETIME NOT NULL, `DashboardUserId` VARCHAR(255) REFERENCES `dashboard_users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE);
+CREATE TABLE sqlite_sequence(name,seq);
+CREATE TABLE `metrics_data` (`id` INTEGER PRIMARY KEY AUTOINCREMENT, `metricType` VARCHAR(255) NOT NULL, `metricName` VARCHAR(255) NOT NULL, `value` FLOAT NOT NULL DEFAULT '1', `guildId` VARCHAR(255), `userId` VARCHAR(255), `metadata` TEXT, `timeBucket` VARCHAR(255), `createdAt` DATETIME NOT NULL, `updatedAt` DATETIME NOT NULL);
+CREATE INDEX `metrics_data_created_at` ON `metrics_data` (`createdAt`);
+CREATE INDEX `metrics_data_metric_type_metric_name` ON `metrics_data` (`metricType`, `metricName`);
