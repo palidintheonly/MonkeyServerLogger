@@ -1221,6 +1221,69 @@ module.exports = {
           logger.error(`Error sending confirmation to logging channel: ${error.message}`);
         }
       }
+    } // End of if-else chain for customId
+    
+    // Handle any reset-specific buttons
+    if (customId === 'setup-reset-confirm') {
+      // Reset all settings to default
+      const guildSettings = await models.Guild.findOrCreateGuild(interaction.guild.id);
+      
+      // Reset all settings
+      guildSettings.setupCompleted = false;
+      guildSettings.setupProgress = JSON.stringify({ step: 0, lastUpdated: new Date().toISOString() });
+      guildSettings.setupData = JSON.stringify({});
+      guildSettings.loggingChannelId = null;
+      guildSettings.modmailEnabled = false;
+      guildSettings.modmailCategoryId = null;
+      guildSettings.modmailInfoChannelId = null;
+      guildSettings.verboseLoggingEnabled = false;
+      guildSettings.verboseLoggingChannelId = null;
+      guildSettings.ignoredChannels = JSON.stringify([]);
+      guildSettings.ignoredRoles = JSON.stringify([]);
+      guildSettings.enabledCategories = JSON.stringify(config.logging.defaultCategories);
+      guildSettings.categoryChannels = JSON.stringify({});
+      
+      await guildSettings.save();
+      
+      const resetEmbed = createSuccessEmbed(
+        'All settings have been reset to default. Use `/setup wizard` to set up the bot again.',
+        '✅ Settings Reset'
+      );
+      
+      await interaction.update({
+        embeds: [resetEmbed],
+        components: []
+      });
+    } else if (customId === 'setup-reset-cancel') {
+      // Cancel the reset operation
+      await interaction.update({
+        embeds: [createEmbed({ 
+          title: 'Reset Cancelled', 
+          description: 'No changes were made to your settings.', 
+          color: '#5865F2' 
+        })],
+        components: []
+      });
+    }
+    
+  } catch (error) {
+    logger.error(`Error handling setup button: ${error.message}`);
+    
+    // Attempt to send error response even if the original interaction might be expired
+    try {
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({
+          embeds: [createErrorEmbed(`An error occurred: ${error.message}`)],
+          ephemeral: true
+        });
+      } else {
+        await interaction.followUp({
+          embeds: [createErrorEmbed(`An error occurred: ${error.message}`)],
+          ephemeral: true
+        });
+      }
+    } catch (replyError) {
+      logger.error(`Failed to reply with error: ${replyError.message}`);
     }
   }
-};
+},
