@@ -178,12 +178,33 @@ async function registerCommands(forceReload = false) {
     // Validate each command for common issues before sending to Discord API
     for (const command of commands) {
       if (command.options) {
+        // Log commands with subcommands for debugging
+        const hasSubcommands = command.options.some(option => option.type === 1);
+        if (hasSubcommands) {
+          logger.info(`Command '${command.name}' has ${command.options.filter(opt => opt.type === 1).length} subcommands`);
+          
+          // List all subcommands for verification
+          const subcommandNames = command.options
+            .filter(opt => opt.type === 1)
+            .map(sc => sc.name)
+            .join(', ');
+          logger.info(`Subcommands for '${command.name}': ${subcommandNames}`);
+        }
+        
         for (const option of command.options) {
           // Check for subcommand with setDefaultMemberPermissions
           if (option.type === 1 && option.default_member_permissions) {
             logger.warn(`Command '${command.name}' has subcommand '${option.name}' with permissions. This is not supported in Discord.js v14.`);
             // Remove the invalid permission from the subcommand
             delete option.default_member_permissions;
+          }
+          
+          // Add additional validation for subcommands if needed
+          if (option.type === 1) {
+            // Check that subcommand has a name and description
+            if (!option.name || !option.description) {
+              logger.error(`Subcommand for '${command.name}' is missing name or description!`);
+            }
           }
         }
       }
