@@ -10,8 +10,8 @@ module.exports = {
   
   async execute(interaction, client) {
     try {
-      // Generate invite link with proper permissions and ALL scopes for commands and context menus
-      const inviteLink = `https://discord.com/oauth2/authorize?client_id=${client.user.id}&permissions=8&scope=bot%20applications.commands%20applications.commands.permissions%20applications.commands.update`;
+      // Generate invite link with proper permissions and correct scopes for commands and context menus
+      const inviteLink = `https://discord.com/oauth2/authorize?client_id=${client.user.id}&permissions=8&scope=bot%20applications.commands`;
       
       // Create embed
       const embed = createEmbed({
