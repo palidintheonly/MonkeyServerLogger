@@ -8,37 +8,13 @@
  * Run with: node register-commands-safe.js
  */
 require('dotenv').config();
+const { REST, Routes } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
-const { REST, Routes, ApplicationCommandType } = require('discord.js');
+const { logger } = require('./src/utils/logger');
 
-// Get environment variables
-const token = process.env.DISCORD_BOT_TOKEN || process.env.TOKEN;
-const clientId = process.env.DISCORD_APPLICATION_ID || process.env.CLIENT_ID;
-
-// Validate environment variables
-if (!token) {
-  console.error('ERROR: No bot token found in environment variables!');
-  console.error('Make sure DISCORD_BOT_TOKEN or TOKEN is set in your .env file');
-  process.exit(1);
-}
-
-if (!clientId) {
-  console.error('ERROR: No client ID found in environment variables!');
-  console.error('Make sure CLIENT_ID or DISCORD_APPLICATION_ID is set in your .env file');
-  process.exit(1);
-}
-
-// Configure REST client with generous timeout
-const rest = new REST({ version: '10', timeout: 120000 }).setToken(token);
-
-console.log('Discord Safe Command Registration Utility');
-console.log('=======================================');
-console.log(`Token available: ${!!token}, Token length: ${token.length}`);
-console.log(`Client ID available: ${!!clientId}, Client ID: ${clientId}`);
-
-// Sleep utility
-const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+// Configure REST client
+const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN);
 
 /**
  * Execute a function with enhanced retry logic for rate limits and timeouts
@@ -51,32 +27,40 @@ async function executeWithRateLimitHandling(fn, operation, maxRetries = 7) {
   let retries = 0;
   let lastError = null;
   
-  while (retries < maxRetries) {
+  while (retries <= maxRetries) {
     try {
-      console.log(`Attempting ${operation}... (attempt ${retries + 1}/${maxRetries})`);
       return await fn();
     } catch (error) {
       lastError = error;
-      console.warn(`Error during ${operation}: ${error.message}`);
       
-      // Check if this is a rate limit error
+      // Check if it's a rate limit error
       if (error.code === 429) {
-        const resetAfter = error.headers?.get('X-RateLimit-Reset-After') || 5;
-        const waitTime = Math.ceil(resetAfter * 1000) + 500;
-        console.warn(`Rate limited! Waiting ${waitTime}ms before retry...`);
-        await sleep(waitTime);
-      } else {
-        // Exponential backoff for other errors
-        const waitTime = Math.min(1000 * Math.pow(2, retries), 60000);
-        console.warn(`Waiting ${waitTime}ms before retry...`);
-        await sleep(waitTime);
+        const retryAfter = error.response?.data?.retry_after ?? 5;
+        retries++;
+        
+        logger.warn(`Rate limited on ${operation}. Waiting ${retryAfter}s before retry ${retries}/${maxRetries}`);
+        await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+      } 
+      // Handle timeout errors
+      else if (error.code === 'ETIMEDOUT' || error.code === 'ECONNRESET' || error.name === 'AbortError') {
+        retries++;
+        
+        // Exponential backoff starting with 1s
+        const delay = Math.min(Math.pow(2, retries - 1) * 1000, 60000);
+        logger.warn(`Connection issue during ${operation}. Waiting ${delay/1000}s before retry ${retries}/${maxRetries}`);
+        await new Promise(resolve => setTimeout(resolve, delay));
       }
-      
-      retries++;
+      // Other errors should fail immediately
+      else {
+        logger.error(`Error during ${operation}:`, error);
+        throw error;
+      }
     }
   }
   
-  throw new Error(`Failed ${operation} after ${maxRetries} attempts: ${lastError?.message}`);
+  // If we're here, we've exceeded max retries
+  logger.error(`Exceeded maximum retries (${maxRetries}) for ${operation}`);
+  throw lastError;
 }
 
 /**
@@ -85,14 +69,16 @@ async function executeWithRateLimitHandling(fn, operation, maxRetries = 7) {
  * @param {string} commandName - Command name for logging
  */
 async function safelyDeleteCommand(commandId, commandName) {
-  await executeWithRateLimitHandling(
-    () => rest.delete(Routes.applicationCommand(clientId, commandId)),
-    `deleting command ${commandName} (${commandId})`
+  return executeWithRateLimitHandling(
+    async () => {
+      const response = await rest.delete(
+        Routes.applicationCommand(process.env.CLIENT_ID, commandId)
+      );
+      logger.info(`Deleted command: ${commandName} (${commandId})`);
+      return response;
+    },
+    `delete command ${commandName}`
   );
-  console.log(`✅ Successfully deleted command: ${commandName}`);
-  
-  // Small delay between deletes to avoid rate limits
-  await sleep(1000);
 }
 
 /**
@@ -101,8 +87,14 @@ async function safelyDeleteCommand(commandId, commandName) {
  */
 async function safelyFetchCommands() {
   return executeWithRateLimitHandling(
-    () => rest.get(Routes.applicationCommands(clientId)),
-    'fetching registered commands'
+    async () => {
+      const response = await rest.get(
+        Routes.applicationCommands(process.env.CLIENT_ID)
+      );
+      logger.info(`Fetched ${response.length} existing commands`);
+      return response;
+    },
+    'fetch commands'
   );
 }
 
@@ -114,35 +106,24 @@ async function safelyFetchCommands() {
 async function safelyRegisterCommands(commands) {
   const registeredCommands = [];
   
-  // Process context menu commands separately
-  const processedCommands = commands.map(cmd => {
-    // For context menu commands (type 2 or 3), ensure they don't have a description field
-    if (cmd.type === ApplicationCommandType.User || cmd.type === ApplicationCommandType.Message) {
-      const { description, ...rest } = cmd;
-      return rest;
-    }
-    return cmd;
-  });
-  
-  for (const [index, command] of processedCommands.entries()) {
+  for (const command of commands) {
     try {
-      console.log(`Registering command ${index + 1}/${processedCommands.length}: ${command.name}`);
-      
-      const registered = await executeWithRateLimitHandling(
-        () => rest.post(Routes.applicationCommands(clientId), { body: command }),
-        `registering command ${command.name}`
+      const registeredCommand = await executeWithRateLimitHandling(
+        async () => {
+          const response = await rest.post(
+            Routes.applicationCommands(process.env.CLIENT_ID),
+            { body: command }
+          );
+          logger.info(`Registered command: ${command.name}`);
+          return response;
+        },
+        `register command ${command.name}`
       );
       
-      registeredCommands.push(registered);
-      console.log(`✅ Successfully registered: ${command.name}`);
-      
-      // Small delay between registrations
-      if (index < processedCommands.length - 1) {
-        await sleep(1500);
-      }
+      registeredCommands.push(registeredCommand);
     } catch (error) {
-      console.error(`Failed to register ${command.name}: ${error.message}`);
-      console.error('Command data:', JSON.stringify(command, null, 2));
+      logger.error(`Failed to register command ${command.name}:`, error);
+      // Continue with other commands
     }
   }
   
@@ -155,124 +136,83 @@ async function safelyRegisterCommands(commands) {
  */
 function loadAllCommands() {
   const commands = [];
-  const contextCommands = [];
   
-  // First load from new_commands directory (highest priority)
-  const newCommandsPath = path.join(__dirname, 'src', 'new_commands');
-  if (fs.existsSync(newCommandsPath)) {
-    const newCommandFiles = fs.readdirSync(newCommandsPath).filter(file => file.endsWith('.js'));
-    console.log(`Found ${newCommandFiles.length} commands in new_commands directory`);
-    
-    for (const file of newCommandFiles) {
-      try {
-        const filePath = path.join(newCommandsPath, file);
-        delete require.cache[require.resolve(filePath)]; // Clear cache
-        const command = require(filePath);
-        
-        if ('data' in command && 'execute' in command) {
-          commands.push(command.data.toJSON());
-          console.log(`✅ Loaded command from new_commands: ${command.data.name}`);
-        } else {
-          console.warn(`⚠️ Command ${file} missing required properties`);
-        }
-      } catch (error) {
-        console.error(`❌ Error loading ${file}: ${error.message}`);
-      }
-    }
-  }
-  
-  // Load from regular commands directories
-  const commandsPath = path.join(__dirname, 'src', 'commands');
-  if (fs.existsSync(commandsPath)) {
-    // Get command names already loaded (to avoid duplicates)
-    const existingCommandNames = new Set(commands.map(cmd => cmd.name));
-    
-    // Root commands
-    const rootFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
-    for (const file of rootFiles) {
-      try {
-        const filePath = path.join(commandsPath, file);
-        delete require.cache[require.resolve(filePath)]; // Clear cache
-        const command = require(filePath);
-        
-        if ('data' in command && 'execute' in command) {
-          // Skip if this command name already exists
-          if (!existingCommandNames.has(command.data.name)) {
-            commands.push(command.data.toJSON());
-            existingCommandNames.add(command.data.name);
-            console.log(`✅ Loaded command from root: ${command.data.name}`);
-          } else {
-            console.warn(`⚠️ Skipping duplicate command: ${command.data.name}`);
-          }
-        }
-      } catch (error) {
-        console.error(`❌ Error loading ${file}: ${error.message}`);
-      }
-    }
-    
-    // Load commands from subdirectories
-    const folders = fs.readdirSync(commandsPath).filter(item => !item.includes('.'));
-    for (const folder of folders) {
-      // Skip context directory, we'll handle that separately
-      if (folder === 'context') continue;
+  try {
+    // Load commands from new_commands directory (prioritize these)
+    const newCommandsPath = path.join(__dirname, 'src', 'new_commands');
+    if (fs.existsSync(newCommandsPath)) {
+      const newCommandFiles = fs.readdirSync(newCommandsPath)
+        .filter(file => file.endsWith('.js'));
       
-      const folderPath = path.join(commandsPath, folder);
-      const commandFiles = fs.readdirSync(folderPath).filter(file => file.endsWith('.js'));
+      logger.info(`Found ${newCommandFiles.length} files in new_commands directory`);
       
-      for (const file of commandFiles) {
+      for (const file of newCommandFiles) {
         try {
-          const filePath = path.join(folderPath, file);
-          delete require.cache[require.resolve(filePath)]; // Clear cache
-          const command = require(filePath);
+          const command = require(path.join(newCommandsPath, file));
           
-          if ('data' in command && 'execute' in command) {
-            // Skip if this command name already exists
-            if (!existingCommandNames.has(command.data.name)) {
+          // Validate command has required properties
+          if (command.data && command.execute) {
+            // Convert SlashCommandBuilder to JSON if needed
+            if (typeof command.data.toJSON === 'function') {
               commands.push(command.data.toJSON());
-              existingCommandNames.add(command.data.name);
-              console.log(`✅ Loaded command from ${folder}: ${command.data.name}`);
             } else {
-              console.warn(`⚠️ Skipping duplicate command: ${command.data.name}`);
+              commands.push(command.data);
             }
+          } else {
+            logger.warn(`Command ${file} is missing required properties`);
           }
         } catch (error) {
-          console.error(`❌ Error loading ${folder}/${file}: ${error.message}`);
+          logger.error(`Error loading command ${file}:`, error);
         }
       }
+    } else {
+      logger.warn('new_commands directory not found, skipping');
     }
     
-    // Handle context menu commands separately
-    const contextPath = path.join(commandsPath, 'context');
-    if (fs.existsSync(contextPath)) {
-      const contextFiles = fs.readdirSync(contextPath).filter(file => file.endsWith('.js'));
+    // Optionally: Load commands from regular commands directory
+    const commandsPath = path.join(__dirname, 'src', 'commands');
+    if (fs.existsSync(commandsPath)) {
+      // Find all command categories (subdirectories)
+      const categories = fs.readdirSync(commandsPath)
+        .filter(folder => fs.statSync(path.join(commandsPath, folder)).isDirectory());
       
-      for (const file of contextFiles) {
-        try {
-          const filePath = path.join(contextPath, file);
-          delete require.cache[require.resolve(filePath)]; // Clear cache
-          const command = require(filePath);
-          
-          if ('data' in command && 'execute' in command) {
-            // For context commands, we need special handling
-            const commandJson = command.data.toJSON();
+      for (const category of categories) {
+        const categoryPath = path.join(commandsPath, category);
+        const commandFiles = fs.readdirSync(categoryPath)
+          .filter(file => file.endsWith('.js'));
+        
+        for (const file of commandFiles) {
+          try {
+            const command = require(path.join(categoryPath, file));
             
-            // Add description for context menu commands (not normally needed, but useful for our validation)
-            // Discord API doesn't need a description for context commands, so we add it locally
-            if (command.description && !commandJson.description) {
-              commandJson.description = command.description;
+            // If command is a slash command (not context menu) and has required properties
+            if (command.data && command.execute) {
+              // Skip if a command with the same name was already loaded from new_commands
+              if (commands.some(cmd => cmd.name === command.data.name)) {
+                logger.info(`Skipping command ${command.data.name} from ${category} as it already exists in new_commands`);
+                continue;
+              }
+              
+              // Convert SlashCommandBuilder to JSON if needed
+              if (typeof command.data.toJSON === 'function') {
+                commands.push(command.data.toJSON());
+              } else {
+                commands.push(command.data);
+              }
             }
-            
-            contextCommands.push(commandJson);
-            console.log(`✅ Loaded context command: ${commandJson.name} (${commandJson.type === 2 ? 'User' : 'Message'})`);
+          } catch (error) {
+            logger.error(`Error loading command ${file} from ${category}:`, error);
           }
-        } catch (error) {
-          console.error(`❌ Error loading context/${file}: ${error.message}`);
         }
       }
+    } else {
+      logger.warn('commands directory not found, skipping');
     }
+  } catch (error) {
+    logger.error('Error loading commands:', error);
   }
   
-  return [...commands, ...contextCommands];
+  return commands;
 }
 
 /**
@@ -280,84 +220,140 @@ function loadAllCommands() {
  * @param {Array} commands - Array of command objects
  */
 function printCommandDetails(commands) {
-  console.log('\n📋 Registered Commands Summary:');
-  console.log('==============================');
-  
-  // Group commands by type
-  const slashCommands = commands.filter(cmd => !cmd.type || cmd.type === ApplicationCommandType.ChatInput);
-  const contextCommands = commands.filter(cmd => cmd.type === ApplicationCommandType.User || cmd.type === ApplicationCommandType.Message);
-  
-  // Print slash commands
-  console.log(`\n💻 Slash Commands (${slashCommands.length}):`);
-  slashCommands.forEach(cmd => {
-    const subcommands = cmd.options?.filter(opt => opt.type === 1);
-    if (subcommands && subcommands.length > 0) {
-      console.log(`📎 ${cmd.name}`);
-      subcommands.forEach(sc => {
-        console.log(`  ├─ ${sc.name}: ${sc.description}`);
-      });
-    } else {
-      console.log(`📄 ${cmd.name}: ${cmd.description}`);
-    }
-  });
-  
-  // Print context commands
-  if (contextCommands.length > 0) {
-    console.log(`\n🔍 Context Menu Commands (${contextCommands.length}):`);
-    contextCommands.forEach(cmd => {
-      if (cmd.type === ApplicationCommandType.User) {
-        console.log(`👤 ${cmd.name} (User)`);
-      } else {
-        console.log(`💬 ${cmd.name} (Message)`);
-      }
-    });
+  if (!commands || commands.length === 0) {
+    console.log('No commands registered.');
+    return;
   }
+  
+  console.log(`\n=== Registered ${commands.length} Commands ===\n`);
+  
+  commands.forEach(command => {
+    console.log(`Command: /${command.name}`);
+    console.log(`  Description: ${command.description}`);
+    
+    // Check for subcommands
+    if (command.options && command.options.some(opt => opt.type === 1)) {
+      console.log('  Subcommands:');
+      command.options
+        .filter(opt => opt.type === 1)
+        .forEach(subcommand => {
+          console.log(`    - ${subcommand.name}: ${subcommand.description}`);
+          
+          // Check for subcommand options
+          if (subcommand.options && subcommand.options.length > 0) {
+            console.log('      Options:');
+            subcommand.options.forEach(opt => {
+              console.log(`        - ${opt.name} (${getOptionTypeName(opt.type)}): ${opt.description}`);
+            });
+          }
+        });
+    }
+    // Regular command options
+    else if (command.options && command.options.length > 0) {
+      console.log('  Options:');
+      command.options.forEach(opt => {
+        console.log(`    - ${opt.name} (${getOptionTypeName(opt.type)}): ${opt.description}`);
+      });
+    }
+    
+    console.log(''); // Empty line for readability
+  });
+}
+
+/**
+ * Get human-readable name for option type
+ * @param {number} type - Discord API option type
+ * @returns {string} Human-readable option type
+ */
+function getOptionTypeName(type) {
+  const types = {
+    1: 'Subcommand',
+    2: 'Subcommand Group',
+    3: 'String',
+    4: 'Integer',
+    5: 'Boolean',
+    6: 'User',
+    7: 'Channel',
+    8: 'Role',
+    9: 'Mentionable',
+    10: 'Number',
+    11: 'Attachment'
+  };
+  
+  return types[type] || `Unknown(${type})`;
 }
 
 async function main() {
+  logger.info('Starting Discord command registration...');
+  
+  if (!process.env.DISCORD_BOT_TOKEN || !process.env.CLIENT_ID) {
+    logger.error('Missing required environment variables: DISCORD_BOT_TOKEN and/or CLIENT_ID');
+    console.log('Please ensure DISCORD_BOT_TOKEN and CLIENT_ID are set in your .env file or Replit Secrets');
+    return;
+  }
+  
   try {
-    console.log('\n🚀 Starting safe command registration process...');
-    
-    // Step 1: Load all commands
+    // Load commands from files
     const commands = loadAllCommands();
+    logger.info(`Loaded ${commands.length} commands from files`);
+    
+    // Make sure we have commands to register
     if (commands.length === 0) {
-      console.error('❌ No valid commands found to register!');
-      process.exit(1);
+      logger.error('No commands found to register');
+      return;
     }
     
-    // Step 2: Delete existing commands
-    console.log('\n🗑️ Retrieving existing commands...');
+    console.log(`\n=== Command Structure Validation ===\n`);
+    // Validate command structures before registering
+    for (const command of commands) {
+      console.log(`Validating: /${command.name}`);
+      
+      // Check for subcommands
+      if (command.options && command.options.some(opt => opt.type === 1)) {
+        const subcommands = command.options.filter(opt => opt.type === 1);
+        console.log(`  Has ${subcommands.length} subcommands`);
+        
+        // Validate each subcommand
+        for (const subcommand of subcommands) {
+          console.log(`  - Subcommand: ${subcommand.name}`);
+          if (!subcommand.name || !subcommand.description) {
+            console.log(`    ❌ ERROR: Missing name or description`);
+          }
+          
+          // Check options
+          if (subcommand.options && subcommand.options.length > 0) {
+            console.log(`    Has ${subcommand.options.length} options`);
+          }
+        }
+      } else {
+        console.log(`  Regular command (no subcommands)`);
+      }
+    }
+    
+    // Fetch existing commands
+    logger.info('Fetching existing commands...');
     const existingCommands = await safelyFetchCommands();
-    console.log(`Found ${existingCommands.length} existing commands`);
     
-    for (const cmd of existingCommands) {
-      await safelyDeleteCommand(cmd.id, cmd.name);
-    }
-    
-    // Wait a bit for Discord to process the deletions
+    // Delete existing commands
     if (existingCommands.length > 0) {
-      console.log('Waiting for Discord API cache to update...');
-      await sleep(3000);
+      logger.info(`Deleting ${existingCommands.length} existing commands...`);
+      for (const command of existingCommands) {
+        await safelyDeleteCommand(command.id, command.name);
+      }
+    } else {
+      logger.info('No existing commands to delete');
     }
     
-    // Step 3: Register commands
-    console.log(`\n📝 Registering ${commands.length} commands with Discord API...`);
+    // Register commands with the Discord API
+    logger.info(`Registering ${commands.length} commands...`);
     const registeredCommands = await safelyRegisterCommands(commands);
     
+    logger.info(`Successfully registered ${registeredCommands.length} commands`);
     printCommandDetails(registeredCommands);
     
-    console.log(`\n✅ Command registration completed successfully: ${registeredCommands.length} commands registered.`);
-    process.exit(0);
   } catch (error) {
-    console.error('\n❌ Error during command registration:');
-    console.error(error);
-    process.exit(1);
+    logger.error('Error in command registration process:', error);
   }
 }
 
-// Run the script
-main().catch(error => {
-  console.error('Unhandled error:');
-  console.error(error);
-  process.exit(1);
-});
+main();

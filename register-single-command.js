@@ -6,64 +6,47 @@
 require('dotenv').config();
 const { REST, Routes, SlashCommandBuilder } = require('discord.js');
 
-// Get environment variables
-const token = process.env.DISCORD_BOT_TOKEN || process.env.TOKEN;
-const clientId = process.env.DISCORD_APPLICATION_ID || process.env.CLIENT_ID;
-
-// Validate environment variables
-if (!token) {
-  console.error('ERROR: No bot token found in environment variables!');
-  console.error('Make sure DISCORD_BOT_TOKEN or TOKEN is set in your .env file');
-  process.exit(1);
-}
-
-if (!clientId) {
-  console.error('ERROR: No client ID found in environment variables!');
-  console.error('Make sure CLIENT_ID or DISCORD_APPLICATION_ID is set in your .env file');
-  process.exit(1);
-}
-
-console.log('Discord Test Command Registration Utility');
-console.log('=======================================');
-console.log(`Token available: ${!!token}, Token length: ${token.length}`);
-console.log(`Client ID available: ${!!clientId}, Client ID: ${clientId}`);
-
-// Create a single test command
-const testCommand = new SlashCommandBuilder()
-  .setName('ping')
-  .setDescription('Check if the bot is responding')
-  .toJSON();
-
 // Configure REST client
-const rest = new REST({ version: '10', timeout: 30000 }).setToken(token);
+const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN);
 
 async function main() {
+  console.log('Starting minimal command registration test...');
+  
+  // Verify environment variables
+  if (!process.env.DISCORD_BOT_TOKEN || !process.env.CLIENT_ID) {
+    console.error('Missing required environment variables: DISCORD_BOT_TOKEN and/or CLIENT_ID');
+    console.log('Please ensure DISCORD_BOT_TOKEN and CLIENT_ID are set in your .env file or Replit Secrets');
+    return;
+  }
+  
+  // Create a simple ping command
+  const pingCommand = new SlashCommandBuilder()
+    .setName('ping')
+    .setDescription('Checks if the bot is online')
+    .toJSON();
+  
   try {
-    console.log('\n🚀 Starting test command registration...');
+    console.log('Attempting to register a single command...');
     
-    // Register the test command
-    console.log('Registering command: ping');
-    const data = await rest.post(
-      Routes.applicationCommands(clientId),
-      { body: testCommand }
+    // Register the command
+    const response = await rest.post(
+      Routes.applicationCommands(process.env.CLIENT_ID),
+      { body: pingCommand }
     );
     
-    console.log(`✅ Successfully registered test command: ${data.name}`);
-    console.log('Command ID:', data.id);
-    console.log('\nIf this test succeeds but other registration scripts fail,');
-    console.log('the issue may be related to command validation or rate limits.');
+    console.log('Command registered successfully!');
+    console.log('Command ID:', response.id);
+    console.log('Command name:', response.name);
     
-    process.exit(0);
   } catch (error) {
-    console.error('\n❌ Error during command registration:');
+    console.error('Error registering command:');
     console.error(error);
-    process.exit(1);
+    
+    // Show detailed error response if available
+    if (error.response) {
+      console.error('API response details:', error.response.data);
+    }
   }
 }
 
-// Run the script
-main().catch(error => {
-  console.error('Unhandled error:');
-  console.error(error);
-  process.exit(1);
-});
+main();

@@ -2,6 +2,7 @@ const { Collection, InteractionType } = require('discord.js');
 const { logger } = require('../../utils/logger');
 const { createErrorEmbed } = require('../../utils/embedBuilder');
 const config = require('../../config');
+const { logInteractionDetails } = require('../../../interaction-logger');
 
 module.exports = {
   name: 'interactionCreate',
@@ -12,6 +13,9 @@ module.exports = {
     
     // Handle slash commands
     if (interaction.isChatInputCommand()) {
+      // Log detailed interaction information
+      logInteractionDetails(interaction);
+      
       const command = client.commands.get(interaction.commandName);
       
       if (!command) {
