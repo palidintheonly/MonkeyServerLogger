@@ -31,7 +31,7 @@ args = "node simple-bot.js"
 waitForPort = 5000
 
 [deployment]
-run = ["sh", "-c", "npm install && node bot.js"]
+run = ["sh", "-c", "node bot.js"]
 deploymentTarget = "gce"
 
 [[ports]]
