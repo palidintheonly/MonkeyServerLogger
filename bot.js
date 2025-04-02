@@ -8,12 +8,10 @@ if (!process.env.DISCORD_BOT_TOKEN && !process.env.TOKEN) {
   process.exit(1);
 }
 
-// Attempt to validate token format
+// Attempt to validate token format - relaxed validation
 const token = process.env.DISCORD_BOT_TOKEN || process.env.TOKEN;
-if (token && (token.split('.').length !== 3)) {
-  console.error('CRITICAL ERROR: Token format appears to be invalid! Discord tokens should contain exactly 3 segments separated by periods.');
-  console.error('This suggests the bot token may have been reset or revoked in the Discord Developer Portal.');
-  console.error('Please check your token in the Replit Secrets tab or obtain a new token from the Discord Developer Portal.');
+if (!token) {
+  console.error('CRITICAL ERROR: No token found! Please set DISCORD_BOT_TOKEN in Replit Secrets.');
   console.error('Running in offline mode to prevent further errors...');
 }
 const fs = require('fs');
@@ -31,7 +29,7 @@ const client = new Client({
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildVoiceStates,
-    GatewayIntentBits.GuildModeration || GatewayIntentBits.GuildBans,
+    GatewayIntentBits.GuildBans, // Use GuildBans instead of GuildModeration
     GatewayIntentBits.DirectMessages,
     GatewayIntentBits.DirectMessageReactions,
     GatewayIntentBits.DirectMessageTyping,
@@ -142,9 +140,9 @@ async function registerCommands() {
   logger.info(`Token available: ${!!token}, Token length: ${token ? token.length : 0}`);
   logger.info(`Client ID available: ${!!clientId}, Client ID: ${clientId}`);
   
-  // Basic token validation check (Discord tokens contain two periods with three segments)
-  if (token && (token.split('.').length !== 3)) {
-    logger.error('Token format appears to be invalid! Please check your token.');
+  // Skip token format validation - check only if token exists
+  if (!token) {
+    logger.error('No token available for Discord API access!');
     return false; // Return false to indicate failure
   }
   
@@ -206,7 +204,7 @@ function registerEvents() {
 
 // Main initialization function
 async function init() {
-  logger.info('Starting Monkey Bytes Discord Bot...');
+  logger.info('Starting Discord Bot...');
   
   try {
     // Connect to database
@@ -220,27 +218,73 @@ async function init() {
     const token = process.env.DISCORD_BOT_TOKEN || process.env.TOKEN;
     logger.info(`[Init] Token available: ${!!token}, Token length: ${token ? token.length : 0}`);
     
-    // Basic token validation check (Discord tokens contain two periods with three segments)
-    if (token && (token.split('.').length !== 3)) {
-      logger.error('Token format appears to be invalid! Discord tokens should be in the format: XXXX.YYYY.ZZZZ');
-      logger.info('Please check your DISCORD_BOT_TOKEN in Replit Secrets. It may need to be reset in the Discord Developer Portal.');
+    // Skip token format validation - some tokens might have non-standard formats
+    if (!token) {
+      logger.error('No token found! Please check your DISCORD_BOT_TOKEN in Replit Secrets.');
       process.exit(1);
     }
     
-    // Register commands - check if successful
-    const commandsRegistered = await registerCommands();
-    if (!commandsRegistered) {
-      logger.error('Failed to register commands with Discord API. Please check your token and permissions.');
-      process.exit(1);
+    // Register commands with better error handling
+    try {
+      const commandsRegistered = await registerCommands();
+      if (!commandsRegistered) {
+        logger.error('Failed to register commands with Discord API. Please check your token and permissions.');
+        logger.error('The DISCORD_BOT_TOKEN in your Replit Secrets may need to be updated.');
+        logger.info('Attempting to continue with bot login despite command registration failure...');
+        // Continue execution instead of exiting
+      } else {
+        logger.info('Successfully registered all commands with Discord API');
+      }
+    } catch (error) {
+      logger.error(`Command registration error: ${error.message}`);
+      logger.error('The bot will attempt to login despite command registration failure');
+      // Continue execution instead of aborting
     }
     
     // Login to Discord
     try {
+      // Add additional diagnostic information
+      logger.info('Attempting to login to Discord...');
+      logger.info(`Using token from environment variable: ${token ? 'AVAILABLE (Hidden for security)' : 'NOT AVAILABLE'}`);
+      logger.info(`Token length is ${token ? token.length : 0} characters`);
+      logger.info(`Token format check: ${token && token.includes('.') ? 'Contains periods (.)' : 'Does NOT contain periods'}`);
+      
+      // Special offline mode check
+      if (!token || token.length < 50 || !token.includes('.')) {
+        logger.error('Token appears to be invalid or incorrectly formatted');
+        logger.error('Discord tokens should contain periods and be approximately 60-70 characters long');
+        logger.error('Please check the DISCORD_BOT_TOKEN in your Replit Secrets');
+        
+        // Write to console for visibility
+        console.error('ERROR: Discord token validation failed!');
+        console.error('Please make sure your DISCORD_BOT_TOKEN is set correctly in Replit Secrets');
+        
+        // Exit with error
+        logger.error('Exiting due to token validation failure');
+        setTimeout(() => process.exit(1), 3000);
+        return;
+      }
+      
+      // Attempt login with detailed error handling
       await client.login(token);
+      
+      // Success path
       logger.info('Successfully authenticated with Discord');
+      console.log('SUCCESS: Bot has successfully connected to Discord');
+      logger.info(`Bot is now online as ${client.user.tag}!`);
+      
+      // Log connected guilds
+      logger.info(`Connected to ${client.guilds.cache.size} guilds`);
+      client.guilds.cache.forEach(guild => {
+        logger.info(`- ${guild.name} (${guild.id})`);
+      });
     } catch (error) {
+      // Extended error logging
       logger.error('Discord authentication failed. Error details:');
-      logger.error(error.message);
+      logger.error(`Error message: ${error.message}`);
+      logger.error(`Error code: ${error.code || 'No error code'}`);
+      logger.error(`Error name: ${error.name || 'Unknown error type'}`);
+      console.error('CRITICAL ERROR: Failed to connect to Discord');
       
       if (error.code === 'TokenInvalid') {
         logger.info('The token appears to be invalid. Please ensure:');
@@ -249,7 +293,17 @@ async function init() {
         logger.info('3. Your bot has the proper intents enabled in the Discord Developer Portal');
       }
       
-      process.exit(1);
+      // More detailed information for specific errors
+      if (error.message.includes('429')) {
+        logger.error('You may be experiencing rate limiting. Wait a while before trying again.');
+      } else if (error.message.includes('401')) {
+        logger.error('Authentication error: The token is likely invalid or revoked.');
+        logger.error('Please generate a new token in the Discord Developer Portal and update your Replit Secret.');
+      }
+      
+      // Don't exit immediately to allow logs to be written
+      logger.error('Will exit in 5 seconds due to authentication failure');
+      setTimeout(() => process.exit(1), 5000);
     }
     
     // Initialize activeLoaders collection for tracking loading indicators

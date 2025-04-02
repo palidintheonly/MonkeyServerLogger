@@ -10,6 +10,9 @@ module.exports = {
   async execute(client) {
     const serverCount = client.guilds.cache.size;
     
+    // Add console.log to help with debugging
+    console.log('READY EVENT TRIGGERED - BOT IS ONLINE!');
+    
     // Set bot activity with enhanced logging info
     client.user.setPresence({
       activities: [{ 
@@ -28,6 +31,9 @@ module.exports = {
     logger.info('==================================================');
     logger.info(`${shardInfo}Bot Ready! Connection successful!`);
     logger.info(`Logged in as: ${client.user.tag} (ID: ${client.user.id})`);
+    
+    // Direct console output for visibility
+    console.log(`Bot is now online as ${client.user.tag}!`);
     logger.info(`Currently serving ${serverCount} servers`);
     logger.info(`Discord API Version: v${client.options.rest.version}`);
     logger.info(`Discord.js Version: v${discordJsVersion}`);

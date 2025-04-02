@@ -552,5 +552,5 @@ module.exports = {
   }
 };
 
-// Make processModmail accessible from outside
+// Export the processModmail function for external access
 module.exports.processModmail = module.exports.processModmail;
