@@ -319,6 +319,11 @@ app.get('/logout', (req, res) => {
   });
 });
 
+// Health check endpoint for Replit
+app.get('/health', (req, res) => {
+  res.status(200).send('OK');
+});
+
 // Admin dashboard route (requires owner)
 app.get('/admin', isOwner, (req, res) => {
   // Get username, with fallback if user is undefined
@@ -739,22 +744,37 @@ app.get('/public', (req, res) => {
 });
 
 // Initialize the dashboard database and start the server
-(async () => {
-  try {
-    // Connect to the dashboard database
-    const dbInit = await initDashboardDB();
-    if (!dbInit) {
-      logger.error('Failed to initialize dashboard database');
+// Start a dedicated HTTP server for health checks first (immediately)
+// This ensures Replit can detect the app is running right away
+// Create a simple health check server using http (already required at the top)
+const healthServer = http.createServer((req, res) => {
+  res.writeHead(200);
+  res.end('Discord bot health check: OK');
+});
+
+healthServer.listen(5000, '0.0.0.0', () => {
+  logger.info('Health check server running on port 5000');
+  
+  // Then proceed with the rest of the initialization
+  (async () => {
+    try {
+      // Connect to the dashboard database
+      const dbInit = await initDashboardDB();
+      if (!dbInit) {
+        logger.error('Failed to initialize dashboard database');
+      }
+      
+      // After database is initialized, replace the health server with the full Express app
+      healthServer.close(() => {
+        const server = app.listen(5000, '0.0.0.0', () => {
+          logger.info('Express web server running on port 5000');
+        });
+      });
+    } catch (error) {
+      logger.error('Failed to start web server:', error);
     }
-    
-    // Start Express server on port 3000
-    const server = app.listen(3000, '0.0.0.0', () => {
-      logger.info('Web server running on port 3000');
-    });
-  } catch (error) {
-    logger.error('Failed to start web server:', error);
-  }
-})();
+  })();
+});
 
 // Log when the Discord client is ready
 client.once('ready', async () => {

@@ -17,7 +17,7 @@ args = "Simple Discord Bot"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "Deployment Bot"
+args = "Discord Bot + Server"
 
 [[workflows.workflow]]
 name = "Simple Discord Bot"
@@ -35,7 +35,7 @@ args = "node simple-bot.js"
 waitForPort = 5000
 
 [[workflows.workflow]]
-name = "Deployment Bot"
+name = "Discord Bot + Server"
 author = "agent"
 
 [workflows.workflow.metadata]
@@ -46,8 +46,8 @@ task = "packager.installForAll"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "node deployment.js"
-waitForPort = 3000
+args = "node minimal-server.js"
+waitForPort = 5000
 
 [deployment]
 run = ["sh", "-c", "npm install && node bot.js"]
