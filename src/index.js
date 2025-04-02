@@ -156,5 +156,16 @@ process.on('uncaughtException', error => {
   process.exit(1);
 });
 
+// Add basic HTTP server to keep deployment healthy
+const http = require('http');
+const server = http.createServer((req, res) => {
+  res.writeHead(200);
+  res.end('Discord bot is running!');
+});
+
+server.listen(3000, '0.0.0.0', () => {
+  logger.info('Health check server running on port 3000');
+});
+
 // Start the bot
 init();
