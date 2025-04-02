@@ -133,8 +133,8 @@ async function registerCommands() {
   logger.info(`Token available: ${!!token}, Token length: ${token ? token.length : 0}`);
   logger.info(`Client ID available: ${!!clientId}, Client ID: ${clientId}`);
   
-  // Basic token validation check (Discord tokens are in a specific format)
-  if (token && !/^[\w-]{24}\.[\w-]{6}\.[\w-]{27}$/.test(token)) {
+  // Basic token validation check (Discord tokens contain two periods with three segments)
+  if (token && (token.split('.').length !== 3)) {
     logger.error('Token format appears to be invalid! Please check your token.');
     return false; // Return false to indicate failure
   }
@@ -211,8 +211,8 @@ async function init() {
     const token = process.env.DISCORD_BOT_TOKEN || process.env.TOKEN;
     logger.info(`[Init] Token available: ${!!token}, Token length: ${token ? token.length : 0}`);
     
-    // Basic token validation check (Discord tokens are in a specific format)
-    if (token && !/^[\w-]{24}\.[\w-]{6}\.[\w-]{27}$/.test(token)) {
+    // Basic token validation check (Discord tokens contain two periods with three segments)
+    if (token && (token.split('.').length !== 3)) {
       logger.error('Token format appears to be invalid! Discord tokens should be in the format: XXXX.YYYY.ZZZZ');
       logger.info('Please check your DISCORD_BOT_TOKEN in Replit Secrets. It may need to be reset in the Discord Developer Portal.');
       process.exit(1);
