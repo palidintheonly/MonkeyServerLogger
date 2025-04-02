@@ -18,6 +18,7 @@ const fs = require('fs');
 const path = require('path');
 const { logger } = require('./src/utils/logger');
 const { logger: enhancedLogger } = require('./src/utils/enhanced-logger');
+const guildCommandManager = require('./src/utils/guildCommandManager');
 const { models, connectToDatabase } = require('./src/database/db');
 const http = require('http');
 
@@ -482,7 +483,18 @@ async function init() {
     
     // Get token
     const token = process.env.DISCORD_BOT_TOKEN || process.env.TOKEN;
+    const clientId = process.env.DISCORD_APPLICATION_ID || process.env.CLIENT_ID || process.env.BOT_ID;
     logger.info(`[Init] Token available: ${!!token}, Token length: ${token ? token.length : 0}`);
+    
+    // Initialize guild command manager
+    if (token) {
+      try {
+        guildCommandManager.init(token, clientId);
+        logger.info('Guild command manager initialized');
+      } catch (error) {
+        logger.error(`Error initializing guild command manager: ${error.message}`);
+      }
+    }
     
     // Simplified login process - no validation checks
     try {
