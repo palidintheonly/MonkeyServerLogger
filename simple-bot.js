@@ -717,11 +717,9 @@ if (!token) {
   process.exit(1);
 }
 
-// Safe logging of token (partial masking)
+// Safe logging of token existence only (no content exposed)
 const tokenLength = token.length;
-const tokenFirstChars = token.substring(0, 5);
-const tokenLastChars = token.substring(tokenLength - 5);
-logger.info(`Using token of length ${tokenLength}, starting with ${tokenFirstChars}... and ending with ...${tokenLastChars}`);
+logger.info(`Token available: ${!!token}, Token length: ${tokenLength}`);
 
 // Login
 logger.info('Attempting to connect to Discord...');

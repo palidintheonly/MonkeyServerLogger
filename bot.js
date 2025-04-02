@@ -133,8 +133,13 @@ async function registerCommands() {
   logger.info(`Token available: ${!!token}, Token length: ${token ? token.length : 0}`);
   logger.info(`Client ID available: ${!!clientId}, Client ID: ${clientId}`);
   
+  // Basic token validation check (Discord tokens are in a specific format)
+  if (token && !/^[\w-]{24}\.[\w-]{6}\.[\w-]{27}$/.test(token)) {
+    logger.error('Token format appears to be invalid! Please check your token.');
+    return false; // Return false to indicate failure
+  }
   
-  const rest = new REST().setToken(token);
+  const rest = new REST({ version: '10' }).setToken(token);
   
   try {
     logger.info(`Started refreshing ${commands.length} application commands`);
@@ -145,8 +150,10 @@ async function registerCommands() {
     );
     
     logger.info(`Successfully reloaded ${data.length} application commands`);
+    return true; // Return true to indicate success
   } catch (error) {
     logger.safeError('Error registering commands', error);
+    return false; // Return false to indicate failure
   }
 }
 
@@ -200,18 +207,39 @@ async function init() {
     // Register events
     registerEvents();
     
-    // Register commands
-    await registerCommands();
-    
-    // Login to Discord
+    // Get token and validate format
     const token = process.env.DISCORD_BOT_TOKEN || process.env.TOKEN;
     logger.info(`[Init] Token available: ${!!token}, Token length: ${token ? token.length : 0}`);
     
+    // Basic token validation check (Discord tokens are in a specific format)
+    if (token && !/^[\w-]{24}\.[\w-]{6}\.[\w-]{27}$/.test(token)) {
+      logger.error('Token format appears to be invalid! Discord tokens should be in the format: XXXX.YYYY.ZZZZ');
+      logger.info('Please check your DISCORD_BOT_TOKEN in Replit Secrets. It may need to be reset in the Discord Developer Portal.');
+      process.exit(1);
+    }
+    
+    // Register commands - check if successful
+    const commandsRegistered = await registerCommands();
+    if (!commandsRegistered) {
+      logger.error('Failed to register commands with Discord API. Please check your token and permissions.');
+      process.exit(1);
+    }
+    
+    // Login to Discord
     try {
       await client.login(token);
       logger.info('Successfully authenticated with Discord');
     } catch (error) {
-      logger.safeError('Discord authentication failed', error);
+      logger.error('Discord authentication failed. Error details:');
+      logger.error(error.message);
+      
+      if (error.code === 'TokenInvalid') {
+        logger.info('The token appears to be invalid. Please ensure:');
+        logger.info('1. Your bot token is correct and has not been reset');
+        logger.info('2. Your bot has not been deleted from the Discord Developer Portal');
+        logger.info('3. Your bot has the proper intents enabled in the Discord Developer Portal');
+      }
+      
       process.exit(1);
     }
     
