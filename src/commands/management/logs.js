@@ -1,6 +1,7 @@
-const { SlashCommandBuilder, PermissionFlagsBits, ChannelType, ActionRowBuilder, SelectMenuBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { SlashCommandBuilder, PermissionFlagsBits, ChannelType, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { createEmbed, createErrorEmbed, createSuccessEmbed } = require('../../utils/embedBuilder');
 const { logger } = require('../../utils/logger');
+const { logger: enhancedLogger } = require('../../utils/enhanced-logger');
 const { models } = require('../../database/db');
 const config = require('../../config');
 const { LoadingIndicator } = require('../../utils/loadingIndicator');
@@ -59,6 +60,24 @@ module.exports = {
               }))
             )
         )
+    )
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('verbose')
+        .setDescription('Configure verbose logging settings')
+        .addBooleanOption(option =>
+          option
+            .setName('enabled')
+            .setDescription('Enable or disable verbose logging')
+            .setRequired(true)
+        )
+        .addChannelOption(option =>
+          option
+            .setName('channel')
+            .setDescription('Channel for verbose logs (debug level)')
+            .setRequired(false)
+            .addChannelTypes(ChannelType.GuildText)
+        )
     ),
   
   async execute(interaction, client) {
@@ -81,6 +100,131 @@ module.exports = {
       await this.handleSetChannelCommand(interaction, guildSettings);
     } else if (subcommand === 'reset') {
       await this.handleResetCommand(interaction, guildSettings);
+    } else if (subcommand === 'verbose') {
+      await this.handleVerboseCommand(interaction, guildSettings, client);
+    }
+  },
+  
+  /**
+   * Handle the verbose logging settings command
+   * @param {Object} interaction - Discord interaction
+   * @param {Object} guildSettings - Guild settings from database
+   * @param {Object} client - Discord client
+   */
+  async handleVerboseCommand(interaction, guildSettings, client) {
+    const enabled = interaction.options.getBoolean('enabled');
+    const channel = interaction.options.getChannel('channel');
+    
+    // Create a loading indicator
+    const loader = new LoadingIndicator({
+      text: `${enabled ? 'Enabling' : 'Disabling'} verbose logging...`,
+      style: this.loadingStyle || "dots",
+      color: this.loadingColor || "green"
+    });
+    
+    // Start the loader
+    await loader.start(interaction);
+    
+    try {
+      // If enabling, check if a channel is provided
+      if (enabled && !channel && !guildSettings.verboseLoggingChannelId) {
+        await loader.stop({
+          text: "You need to specify a channel when enabling verbose logging for the first time.",
+          embeds: [createErrorEmbed("Please provide a channel to receive verbose logs.")],
+          success: false
+        });
+        return;
+      }
+      
+      // Update settings
+      const updateData = { verboseLoggingEnabled: enabled };
+      
+      // Update channel if provided
+      if (channel) {
+        updateData.verboseLoggingChannelId = channel.id;
+      }
+      
+      // Update guild settings
+      await guildSettings.update(updateData);
+      
+      // Refresh settings
+      const updatedSettings = await models.Guild.findOrCreateGuild(interaction.guild.id);
+      
+      // Get the verbose logging channel
+      let verboseChannel = null;
+      if (updatedSettings.verboseLoggingChannelId) {
+        verboseChannel = await interaction.guild.channels.fetch(updatedSettings.verboseLoggingChannelId).catch(() => null);
+      }
+      
+      // Update the logger settings
+      if (enabled) {
+        if (verboseChannel) {
+          enhancedLogger.setLogChannel(verboseChannel, true);
+          enhancedLogger.setVerboseLogging(true);
+          logger.info(`Verbose logging enabled for ${interaction.guild.name} in channel #${verboseChannel.name}`);
+          
+          // Send a test message to the verbose channel
+          try {
+            const testEmbed = createEmbed({
+              title: "🔍 Verbose Logging Test",
+              description: `This channel has been set to receive verbose debug logs.\n\nSet up by: ${interaction.user}`,
+              color: "#808080",
+              fields: [
+                { name: "Status", value: "✅ Enabled", inline: true },
+                { name: "Log Level", value: "DEBUG", inline: true },
+                { name: "Configuration Time", value: new Date().toISOString(), inline: false }
+              ]
+            });
+            
+            await verboseChannel.send({ embeds: [testEmbed] });
+            
+            // Send a test debug log
+            enhancedLogger.debug("Verbose logging test message", { 
+              guild: interaction.guild.name,
+              enabled_by: interaction.user.tag,
+              test: true
+            });
+          } catch (error) {
+            logger.error(`Error sending test message to verbose log channel: ${error.message}`);
+          }
+        }
+      } else {
+        enhancedLogger.setVerboseLogging(false);
+        logger.info(`Verbose logging disabled for ${interaction.guild.name}`);
+      }
+      
+      // Create success embed
+      const embed = createSuccessEmbed(
+        enabled 
+          ? `Verbose logging is now enabled${verboseChannel ? ` in channel ${verboseChannel}` : ''}.`
+          : "Verbose logging is now disabled.",
+        "Verbose Logging Settings Updated"
+      );
+      
+      // Add field about what verbose logging does
+      embed.addFields({ 
+        name: "About Verbose Logging", 
+        value: "Verbose logging includes detailed debug-level information that can be useful for troubleshooting. " +
+               "It includes more technical details than regular logs and is recommended for advanced users only.",
+        inline: false
+      });
+      
+      // Stop the loader with success state
+      await loader.stop({
+        text: `Verbose logging ${enabled ? 'enabled' : 'disabled'} successfully!`,
+        embeds: [embed],
+        success: true
+      });
+      
+    } catch (error) {
+      logger.error(`Error updating verbose logging settings: ${error.message}`);
+      
+      // Stop the loader with error state
+      await loader.stop({
+        text: "There was an error updating verbose logging settings!",
+        embeds: [createErrorEmbed(`Error: ${error.message}`)],
+        success: false
+      });
     }
   },
   
@@ -94,6 +238,12 @@ module.exports = {
     let mainChannel = null;
     if (guildSettings.loggingChannelId) {
       mainChannel = await interaction.guild.channels.fetch(guildSettings.loggingChannelId).catch(() => null);
+    }
+    
+    // Get verbose logging channel if enabled
+    let verboseChannel = null;
+    if (guildSettings.verboseLoggingEnabled && guildSettings.verboseLoggingChannelId) {
+      verboseChannel = await interaction.guild.channels.fetch(guildSettings.verboseLoggingChannelId).catch(() => null);
     }
     
     // Create fields for all categories
@@ -118,17 +268,29 @@ module.exports = {
       });
     }
     
+    // Create the main embed fields
+    const mainFields = [
+      {
+        name: '📊 Main Logging Channel',
+        value: mainChannel ? `${mainChannel}` : 'Not set - Please run `/setup`',
+        inline: false
+      },
+      {
+        name: '🔍 Verbose Logging',
+        value: guildSettings.verboseLoggingEnabled 
+          ? `**Status:** ✅ Enabled\n**Channel:** ${verboseChannel ? verboseChannel : 'Invalid Channel'}`
+          : '**Status:** ❌ Disabled\nUse `/logs verbose enabled:true channel:#channel` to enable',
+        inline: false
+      }
+    ];
+    
     // Create the embed
     const embed = createEmbed({
       title: `${config.bot.name} Logging Configuration`,
       description: `Here's your current logging setup for ${interaction.guild.name}:`,
       thumbnail: interaction.guild.iconURL({ dynamic: true }),
       fields: [
-        {
-          name: '📊 Main Logging Channel',
-          value: mainChannel ? `${mainChannel}` : 'Not set - Please run `/setup`',
-          inline: false
-        },
+        ...mainFields,
         ...fields
       ]
     });
@@ -139,8 +301,15 @@ module.exports = {
       .setLabel('Manage Categories')
       .setStyle(ButtonStyle.Primary)
       .setEmoji('📋');
+      
+    // Create verbose logging button
+    const verboseButton = new ButtonBuilder()
+      .setCustomId('logs-toggle-verbose')
+      .setLabel(guildSettings.verboseLoggingEnabled ? 'Disable Verbose Logs' : 'Enable Verbose Logs')
+      .setStyle(guildSettings.verboseLoggingEnabled ? ButtonStyle.Danger : ButtonStyle.Success)
+      .setEmoji('🔍');
     
-    const buttonRow = new ActionRowBuilder().addComponents(categoryButton);
+    const buttonRow = new ActionRowBuilder().addComponents(categoryButton, verboseButton);
     
     // Send the embed
     await interaction.reply({
@@ -262,12 +431,12 @@ module.exports = {
    * @param {Object} client - Discord client
    */
   async handleButton(interaction, client) {
+    // Get guild settings for any button handler
+    const guildSettings = await models.Guild.findOrCreateGuild(interaction.guild.id);
+    
     if (interaction.customId === 'logs-manage-categories') {
-      // Get guild settings
-      const guildSettings = await models.Guild.findOrCreateGuild(interaction.guild.id);
-      
       // Create select menu for enabling/disabling categories
-      const categorySelect = new SelectMenuBuilder()
+      const categorySelect = new StringSelectMenuBuilder()
         .setCustomId('logs-toggle-categories')
         .setPlaceholder('Select categories to enable')
         .setMinValues(0)
@@ -293,6 +462,77 @@ module.exports = {
         components: [selectRow],
         flags: { ephemeral: true }
       });
+    }
+    
+    else if (interaction.customId === 'logs-toggle-verbose') {
+      // Create a loading indicator
+      const loader = new LoadingIndicator({
+        text: guildSettings.verboseLoggingEnabled 
+          ? "Disabling verbose logging..." 
+          : "Configuring verbose logging...",
+        style: this.loadingStyle || "dots",
+        color: this.loadingColor || "green"
+      });
+      
+      // Start the loader
+      await loader.start(interaction);
+      
+      try {
+        if (guildSettings.verboseLoggingEnabled) {
+          // If currently enabled, simply disable it
+          await guildSettings.update({ verboseLoggingEnabled: false });
+          
+          // Update the logger settings
+          enhancedLogger.setVerboseLogging(false);
+          logger.info(`Verbose logging disabled for ${interaction.guild.name} by ${interaction.user.tag}`);
+          
+          // Stop the loader with success state
+          await loader.stop({
+            text: "Verbose logging disabled successfully.",
+            embeds: [createSuccessEmbed(
+              "Verbose logging has been disabled. Debug-level logs will no longer be sent to Discord.",
+              "Verbose Logging Disabled"
+            )],
+            success: true
+          });
+        } 
+        else {
+          // If currently disabled, need to show a channel selector
+          // We'll ask the user to use the proper command instead
+          const embed = createEmbed({
+            title: "Enable Verbose Logging",
+            description: "To enable verbose logging, you need to specify a channel to send the logs to.",
+            fields: [
+              { 
+                name: "Command Usage", 
+                value: "Use `/logs verbose enabled:true channel:#your-channel` to enable verbose logging with a specific channel."
+              },
+              {
+                name: "What are verbose logs?",
+                value: "Verbose logs include debug-level information that can be useful for troubleshooting. They are more detailed than regular logs."
+              }
+            ],
+            color: "#5865F2" // Discord blurple
+          });
+          
+          // Stop the loader with the instructions
+          await loader.stop({
+            text: "Please use the command to enable verbose logging.",
+            embeds: [embed],
+            success: true
+          });
+        }
+      } 
+      catch (error) {
+        logger.error(`Error toggling verbose logging: ${error.message}`);
+        
+        // Stop the loader with error state
+        await loader.stop({
+          text: "There was an error updating verbose logging settings!",
+          embeds: [createErrorEmbed(`Error: ${error.message}`)],
+          success: false
+        });
+      }
     }
   },
   

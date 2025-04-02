@@ -50,8 +50,8 @@ module.exports = {
       // Send the response with embed and button
       await interaction.reply({ 
         embeds: [embed], 
-        components: [row], 
-        ephemeral: false 
+        components: [row]
+        // Removed ephemeral: false as it's the default behavior
       });
       
       logger.info(`User ${interaction.user.tag} requested an invite link`);
@@ -61,8 +61,8 @@ module.exports = {
       
       // Send error message
       await interaction.reply({ 
-        content: 'There was an error generating the invite link. Please try again later.', 
-        flags: { ephemeral: true } 
+        content: 'There was an error generating the invite link. Please try again later.',
+        ephemeral: true
       });
     }
   }

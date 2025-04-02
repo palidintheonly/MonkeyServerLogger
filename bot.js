@@ -1,10 +1,11 @@
-// Main entry point for the Discord bot
+// Main entry point for the Discord bot with enhanced features
 require('dotenv').config();
 const { Client, GatewayIntentBits, Collection, REST, Routes, Events } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 const { logger } = require('./src/utils/logger');
-const { connectToDatabase } = require('./src/database/db');
+const { logger: enhancedLogger } = require('./src/utils/enhanced-logger');
+const { models, connectToDatabase } = require('./src/database/db');
 const http = require('http');
 
 // Setup client with appropriate intents

@@ -315,7 +315,7 @@ module.exports = {
       default:
         await interaction.reply({
           content: 'Unknown button interaction',
-          ephemeral: true
+          flags: { ephemeral: true }
         });
     }
   }

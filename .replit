@@ -27,7 +27,7 @@ task = "packager.installForAll"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "node fix-bot.js"
+args = "node bot.js"
 
 [deployment]
 run = ["sh", "-c", "node bot.js"]
@@ -40,3 +40,7 @@ externalPort = 80
 [[ports]]
 localPort = 5000
 externalPort = 5000
+
+[[ports]]
+localPort = 9090
+externalPort = 3000

@@ -222,8 +222,8 @@ client.once('ready', async () => {
     res.end('Discord bot is running!');
   });
   
-  server.listen(5000, '0.0.0.0', () => {
-    logger.info('Health check server running on port 5000');
+  server.listen(9000, '0.0.0.0', () => {
+    logger.info('Health check server running on port 9000');
   });
 });
 

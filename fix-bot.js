@@ -191,8 +191,8 @@ client.on('interactionCreate', async interaction => {
       if (!command) {
         logger.warn(`Command not found: ${commandName}`);
         await interaction.reply({ 
-          content: 'This command is not properly implemented yet. Please try again later.', 
-          ephemeral: true 
+          content: 'This command is not properly implemented yet. Please try again later.',
+          ephemeral: true
         });
         return;
       }
@@ -229,14 +229,14 @@ client.on('interactionCreate', async interaction => {
       } catch (error) {
         logger.error(`Error handling button interaction ${interaction.customId}:`, error);
         await interaction.reply({ 
-          content: 'There was an error processing this button interaction.', 
-          ephemeral: true 
+          content: 'There was an error processing this button interaction.',
+          ephemeral: true
         }).catch(e => logger.error('Could not send error response:', e));
       }
     } else {
       await interaction.reply({ 
-        content: 'Button handler not implemented.', 
-        ephemeral: true 
+        content: 'Button handler not implemented.',
+        ephemeral: true
       });
     }
   } else if (interaction.isStringSelectMenu()) {
@@ -259,7 +259,7 @@ client.on('interactionCreate', async interaction => {
       }
     } else {
       await interaction.reply({ 
-        content: 'Select menu handler not implemented.', 
+        content: 'Select menu handler not implemented.',
         ephemeral: true
       });
     }
@@ -277,13 +277,13 @@ client.on('interactionCreate', async interaction => {
       } catch (error) {
         logger.error(`Error handling modal submission ${interaction.customId}:`, error);
         await interaction.reply({ 
-          content: 'There was an error processing this modal submission.', 
+          content: 'There was an error processing this modal submission.',
           ephemeral: true
         }).catch(e => logger.error('Could not send error response:', e));
       }
     } else {
       await interaction.reply({ 
-        content: 'Modal submission handler not implemented.', 
+        content: 'Modal submission handler not implemented.',
         ephemeral: true
       });
     }
@@ -299,13 +299,13 @@ client.on('interactionCreate', async interaction => {
       } catch (error) {
         logger.error(`Error executing context menu command ${interaction.commandName}:`, error);
         await interaction.reply({ 
-          content: 'There was an error executing this context menu command.', 
+          content: 'There was an error executing this context menu command.',
           ephemeral: true
         }).catch(e => logger.error('Could not send error response:', e));
       }
     } else {
       await interaction.reply({ 
-        content: 'This context menu command is not implemented yet.', 
+        content: 'This context menu command is not implemented yet.',
         ephemeral: true
       });
     }

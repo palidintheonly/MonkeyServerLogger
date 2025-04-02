@@ -2,7 +2,7 @@ const { ActivityType, version: discordJsVersion } = require('discord.js');
 const { logger } = require('../../utils/logger');
 const { logger: enhancedLogger } = require('../../utils/enhanced-logger');
 const config = require('../../config');
-const models = require('../../database/db');
+const { models } = require('../../database/db');
 
 module.exports = {
   name: 'ready',
@@ -84,11 +84,24 @@ module.exports = {
     // Set up the enhanced logging for each guild
     for (const [guildId, guild] of client.guilds.cache) {
       try {
-        // Load guild settings from database
-        const guildSettings = await models.Guild.findOrCreateGuild(guildId);
+        // Check if models and Guild model are available
+        if (!models || !models.Guild) {
+          logger.warn(`Database models not available yet for guild ${guild.name}, skipping enhanced logging setup`);
+          continue;
+        }
+        
+        // Load guild settings from database - properly access model
+        const Guild = models.Guild;
+        const guildSettings = await Guild.findOrCreate({
+          where: { guildId },
+          defaults: { guildId }
+        }).then(([guild]) => guild);
         
         // Skip if setup not completed
-        if (!guildSettings.setupCompleted) continue;
+        if (!guildSettings.setupCompleted) {
+          logger.info(`Skipping logging setup for ${guild.name} (setup not completed)`);
+          continue;
+        }
         
         // Set up regular logging channel if available
         if (guildSettings.loggingChannelId) {
@@ -104,7 +117,8 @@ module.exports = {
         }
         
         // Set up verbose logging if enabled
-        if (guildSettings.isVerboseLoggingEnabled() && guildSettings.verboseLoggingChannelId) {
+        const verboseEnabled = guildSettings.verboseLoggingEnabled === true;
+        if (verboseEnabled && guildSettings.verboseLoggingChannelId) {
           try {
             const verboseChannel = await guild.channels.fetch(guildSettings.verboseLoggingChannelId);
             if (verboseChannel) {
