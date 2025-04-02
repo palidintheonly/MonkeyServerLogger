@@ -28,6 +28,13 @@ const themes = {
   random: () => Math.floor(Math.random() * 0xFFFFFF),
 };
 
+// Safe fallback colors for error cases
+const FALLBACK_COLORS = {
+  DEFAULT: 0x3498db, // Blue
+  SUCCESS: 0x2ecc71, // Green
+  ERROR: 0xe74c3c,   // Red
+};
+
 /**
  * Class to handle animated loading indicators in Discord messages
  */
@@ -88,25 +95,36 @@ class LoadingIndicator {
       const frame = this.frames[this.currentFrame] || '⌛';
       const elapsed = ((Date.now() - this.createdAt) / 1000).toFixed(1);
 
+      // Create embed first without color to prevent bitfield issues
       const embed = new EmbedBuilder()
         .setDescription(`${frame} ${this.text}`)
         .setFooter({ text: `Time elapsed: ${elapsed}s` });
         
-      // Safely add color
+      // Safely add color with explicit error handling
       try {
-        embed.setColor(this.getColor());
+        const colorValue = this.getColor();
+        
+        // Additional verification that color is a proper integer
+        if (typeof colorValue === 'number' && !isNaN(colorValue) && isFinite(colorValue)) {
+          embed.setColor(colorValue);
+        } else {
+          // If color is not a valid number, use our fallback
+          logger.warn(`Invalid color value: ${colorValue}, using fallback`);
+          embed.setColor(FALLBACK_COLORS.DEFAULT);
+        }
       } catch (colorError) {
         logger.error(`Error setting color in embed: ${colorError.message}`);
-        embed.setColor(0x3498db); // Fallback to blue
+        // Use our defined fallback color
+        embed.setColor(FALLBACK_COLORS.DEFAULT);
       }
       
       return embed;
     } catch (error) {
       logger.error(`Error creating embed: ${error.message}`);
-      // Return a simple fallback embed
+      // Return a simple fallback embed with safe color
       return new EmbedBuilder()
         .setDescription(`⌛ ${this.text || 'Loading...'}`)
-        .setColor(0x3498db); // Fallback to blue
+        .setColor(FALLBACK_COLORS.DEFAULT);
     }
   }
 
