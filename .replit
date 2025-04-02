@@ -15,10 +15,6 @@ author = "agent"
 task = "workflow.run"
 args = "Simple Discord Bot"
 
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "Discord Bot + Server"
-
 [[workflows.workflow]]
 name = "Simple Discord Bot"
 author = "agent"
@@ -32,21 +28,6 @@ task = "packager.installForAll"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "node simple-bot.js"
-waitForPort = 5000
-
-[[workflows.workflow]]
-name = "Discord Bot + Server"
-author = "agent"
-
-[workflows.workflow.metadata]
-agentRequireRestartOnSave = false
-
-[[workflows.workflow.tasks]]
-task = "packager.installForAll"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "node minimal-server.js"
 waitForPort = 5000
 
 [deployment]

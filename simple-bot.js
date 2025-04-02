@@ -211,7 +211,7 @@ client.once('ready', async () => {
     logger.error('Failed to fetch application commands:', error);
   }
   
-  // Start HTTP server
+  // Minimal HTTP server for Replit health check only
   const http = require('http');
   const server = http.createServer((req, res) => {
     res.writeHead(200);
