@@ -110,6 +110,43 @@ module.exports = (sequelize) => {
       defaultValue: false
     },
     
+    // Setup progress tracking
+    setupProgress: {
+      type: DataTypes.TEXT,
+      allowNull: false,
+      defaultValue: '{"step": 0, "lastUpdated": null}',
+      get() {
+        try {
+          return JSON.parse(this.getDataValue('setupProgress'));
+        } catch {
+          return { step: 0, lastUpdated: null };
+        }
+      },
+      set(value) {
+        // Always include the current timestamp when updating
+        const progress = typeof value === 'object' ? value : { step: 0 };
+        progress.lastUpdated = new Date().toISOString();
+        this.setDataValue('setupProgress', JSON.stringify(progress));
+      }
+    },
+    
+    // Setup data storage for persisting between sessions
+    setupData: {
+      type: DataTypes.TEXT,
+      allowNull: false,
+      defaultValue: '{}',
+      get() {
+        try {
+          return JSON.parse(this.getDataValue('setupData'));
+        } catch {
+          return {};
+        }
+      },
+      set(value) {
+        this.setDataValue('setupData', JSON.stringify(value));
+      }
+    },
+    
     // Modmail enabled flag
     modmailEnabled: {
       type: DataTypes.BOOLEAN,
@@ -159,7 +196,53 @@ module.exports = (sequelize) => {
   Guild.prototype.getModmailCategory = function() {
     return this.modmailCategoryId;
   };
-
+  
+  // Setup progress and data management methods
+  Guild.prototype.getSetupProgress = function() {
+    return this.setupProgress;
+  };
+  
+  Guild.prototype.updateSetupProgress = async function(step, additionalData = {}) {
+    const progress = this.setupProgress;
+    progress.step = step;
+    progress.lastInteraction = new Date().toISOString();
+    
+    // Store any additional data provided
+    const setupData = { ...this.setupData, ...additionalData };
+    
+    await this.update({
+      setupProgress: progress,
+      setupData: setupData
+    });
+    
+    return this;
+  };
+  
+  Guild.prototype.storeSetupData = async function(key, value) {
+    const setupData = this.setupData;
+    setupData[key] = value;
+    
+    await this.update({
+      setupData: setupData
+    });
+    
+    return this;
+  };
+  
+  Guild.prototype.getSetupData = function(key, defaultValue = null) {
+    const setupData = this.setupData;
+    return key in setupData ? setupData[key] : defaultValue;
+  };
+  
+  Guild.prototype.clearSetupData = async function() {
+    await this.update({
+      setupData: {},
+      setupProgress: { step: 0, lastUpdated: new Date().toISOString() }
+    });
+    
+    return this;
+  };
+  
   // Static methods
   Guild.findOrCreateGuild = async function(guildId) {
     const [guild] = await this.findOrCreate({

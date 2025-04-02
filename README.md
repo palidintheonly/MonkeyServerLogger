@@ -89,9 +89,12 @@ The bot is hosted on Replit for 24/7 uptime. It uses a SQLite database to store 
 ### Auto-Scaling Capabilities
 
 The bot implements Discord.js Sharding Manager to efficiently scale across multiple servers:
-- Automatically creates optimal number of shards based on guild count
+- Custom sharding strategy that creates 1 shard for every guild (Discord-recommended approach)
+- Optimal performance with dedicated resources per server
 - Distributes server load across multiple processes
 - Maintains performance as the bot grows in popularity
+- Implements robust retry mechanism with exponential backoff for API rate limits
+- Enhanced error handling and recovery for Discord API connections
 - Collects and aggregates stats across all shards
 - Handles inter-shard communication for global statistics
 

@@ -27,6 +27,56 @@ module.exports = {
       return;
     }
     
+    // Check for and resume existing setup if available
+    const guildSettings = await models.Guild.findOrCreateGuild(interaction.guild.id);
+    const setupProgress = guildSettings.getSetupProgress();
+    
+    // If we have a setup in progress, ask if the user wants to resume
+    if (setupProgress.step > 0 && !guildSettings.setupCompleted) {
+      const lastUpdated = new Date(setupProgress.lastUpdated);
+      const timeAgo = this.getTimeAgo(lastUpdated);
+      
+      const resumeEmbed = createEmbed({
+        title: '⚙️ Setup In Progress',
+        description: `You have a setup that was started ${timeAgo}. Would you like to resume where you left off or start fresh?`,
+        color: '#FFA500', // Orange
+        fields: [
+          {
+            name: 'Progress',
+            value: `You completed ${setupProgress.step} of 3 steps.`
+          },
+          {
+            name: 'Stored Information',
+            value: Object.keys(guildSettings.setupData).length 
+              ? `You've already provided: ${Object.keys(guildSettings.setupData).join(', ')}`
+              : 'No information stored yet.'
+          }
+        ]
+      });
+      
+      // Create buttons for resume or restart
+      const resumeButton = new ButtonBuilder()
+        .setCustomId('setup-resume')
+        .setLabel('Resume Setup')
+        .setStyle(ButtonStyle.Success);
+      
+      const restartButton = new ButtonBuilder()
+        .setCustomId('setup-restart')
+        .setLabel('Start Fresh')
+        .setStyle(ButtonStyle.Danger);
+      
+      const buttonRow = new ActionRowBuilder().addComponents(resumeButton, restartButton);
+      
+      await interaction.reply({
+        embeds: [resumeEmbed],
+        components: [buttonRow],
+        ephemeral: true
+      });
+      
+      return;
+    }
+    
+    // Either no setup in progress or user chose to start fresh
     // Create a modal for initial setup
     const modal = new ModalBuilder()
       .setCustomId('setup-modal')
@@ -68,6 +118,23 @@ module.exports = {
       .setRequired(false)
       .setMaxLength(3);
     
+    // Pre-fill form if resuming setup
+    if (guildSettings.setupData.channelName) {
+      channelNameInput.setValue(guildSettings.setupData.channelName);
+    }
+    
+    if (guildSettings.setupData.modmailChannel) {
+      modmailChannelInput.setValue(guildSettings.setupData.modmailChannel);
+    }
+    
+    if (guildSettings.setupData.description) {
+      descriptionInput.setValue(guildSettings.setupData.description);
+    }
+    
+    if (guildSettings.setupData.enableModmail !== undefined) {
+      modmailToggleInput.setValue(guildSettings.setupData.enableModmail ? 'yes' : 'no');
+    }
+    
     // Add the components to the modal
     const firstActionRow = new ActionRowBuilder().addComponents(channelNameInput);
     const secondActionRow = new ActionRowBuilder().addComponents(modmailChannelInput);
@@ -77,8 +144,35 @@ module.exports = {
     // Add inputs to the modal
     modal.addComponents(firstActionRow, secondActionRow, thirdActionRow, fourthActionRow);
     
+    // Update setup progress
+    await guildSettings.updateSetupProgress(1);
+    
     // Show the modal
     await interaction.showModal(modal);
+  },
+  
+  /**
+   * Calculate time ago from a given date
+   * @param {Date} date - The date to calculate from
+   * @returns {string} Time ago string
+   */
+  getTimeAgo(date) {
+    const now = new Date();
+    const diffMs = now - date;
+    const diffSec = Math.round(diffMs / 1000);
+    const diffMin = Math.round(diffSec / 60);
+    const diffHr = Math.round(diffMin / 60);
+    const diffDays = Math.round(diffHr / 24);
+    
+    if (diffSec < 60) {
+      return `${diffSec} second${diffSec !== 1 ? 's' : ''} ago`;
+    } else if (diffMin < 60) {
+      return `${diffMin} minute${diffMin !== 1 ? 's' : ''} ago`;
+    } else if (diffHr < 24) {
+      return `${diffHr} hour${diffHr !== 1 ? 's' : ''} ago`;
+    } else {
+      return `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`;
+    }
   },
   
   /**
@@ -107,6 +201,14 @@ module.exports = {
       
       // Find or create a guild record in the database
       const guildSettings = await models.Guild.findOrCreateGuild(interaction.guild.id);
+      
+      // Store the form data for potential resume later
+      await guildSettings.updateSetupProgress(2, {
+        channelName: channelName,
+        description: description,
+        modmailChannel: modmailChannelName,
+        enableModmail: enableModmail
+      });
       
       // Create the logging channel if it doesn't exist
       let loggingChannel;
@@ -310,9 +412,14 @@ module.exports = {
         enabledCategories[category] = selectedCategories.includes(category);
       });
       
-      // Update guild settings with enabled categories
+      // Update guild settings with enabled categories and track progress
       await guildSettings.update({
         enabledCategories: enabledCategories
+      });
+      
+      // Update setup progress
+      await guildSettings.updateSetupProgress(3, { 
+        selectedCategories: selectedCategories 
       });
       
       // Update the embed to show selected categories
@@ -342,11 +449,157 @@ module.exports = {
    * @param {Object} client - Discord client
    */
   async handleButton(interaction, client) {
-    if (interaction.customId === 'setup-confirm') {
+    // Handle setup resume/restart buttons
+    if (interaction.customId === 'setup-resume') {
+      await interaction.deferUpdate();
+      
+      // Get guild settings to continue setup
+      const guildSettings = await models.Guild.findOrCreateGuild(interaction.guild.id);
+      const setupProgress = guildSettings.getSetupProgress();
+      
+      // Create a new modal for the setup form
+      const modal = new ModalBuilder()
+        .setCustomId('setup-modal')
+        .setTitle('Monkey Bytes Logging Setup');
+      
+      // Add text input for the main logging channel
+      const channelNameInput = new TextInputBuilder()
+        .setCustomId('channelName')
+        .setLabel('Main logging channel name')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder(config.logging.defaultChannelName)
+        .setRequired(false)
+        .setMaxLength(100);
+      
+      // Add input for modmail channel
+      const modmailChannelInput = new TextInputBuilder()
+        .setCustomId('modmailChannel')
+        .setLabel('Modmail channel name (optional)')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('modmail-tickets')
+        .setRequired(false)
+        .setMaxLength(100);
+      
+      // Add a description field
+      const descriptionInput = new TextInputBuilder()
+        .setCustomId('description')
+        .setLabel('Logging system description (optional)')
+        .setStyle(TextInputStyle.Paragraph)
+        .setPlaceholder('Add a custom description for your logging system...')
+        .setRequired(false)
+        .setMaxLength(1000);
+      
+      // Add toggle for enabling modmail
+      const modmailToggleInput = new TextInputBuilder()
+        .setCustomId('enableModmail')
+        .setLabel('Enable Modmail? (yes/no)')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('yes')
+        .setRequired(false)
+        .setMaxLength(3);
+      
+      // Pre-fill the modal with the existing data
+      if (guildSettings.setupData.channelName) {
+        channelNameInput.setValue(guildSettings.setupData.channelName);
+      }
+      
+      if (guildSettings.setupData.modmailChannel) {
+        modmailChannelInput.setValue(guildSettings.setupData.modmailChannel);
+      }
+      
+      if (guildSettings.setupData.description) {
+        descriptionInput.setValue(guildSettings.setupData.description);
+      }
+      
+      if (guildSettings.setupData.enableModmail !== undefined) {
+        modmailToggleInput.setValue(guildSettings.setupData.enableModmail ? 'yes' : 'no');
+      }
+      
+      // Add the components to the modal
+      const firstActionRow = new ActionRowBuilder().addComponents(channelNameInput);
+      const secondActionRow = new ActionRowBuilder().addComponents(modmailChannelInput);
+      const thirdActionRow = new ActionRowBuilder().addComponents(modmailToggleInput);
+      const fourthActionRow = new ActionRowBuilder().addComponents(descriptionInput);
+      
+      // Add inputs to the modal
+      modal.addComponents(firstActionRow, secondActionRow, thirdActionRow, fourthActionRow);
+      
+      // Show the modal to continue from where they left off
+      await interaction.showModal(modal);
+      
+    } else if (interaction.customId === 'setup-restart') {
+      await interaction.deferUpdate();
+      
+      // Get guild settings to reset them
+      const guildSettings = await models.Guild.findOrCreateGuild(interaction.guild.id);
+      
+      // Clear all setup data and progress
+      await guildSettings.clearSetupData();
+      
+      // Start fresh with a new modal
+      const modal = new ModalBuilder()
+        .setCustomId('setup-modal')
+        .setTitle('Monkey Bytes Logging Setup');
+      
+      // Add text input for the main logging channel
+      const channelNameInput = new TextInputBuilder()
+        .setCustomId('channelName')
+        .setLabel('Main logging channel name')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder(config.logging.defaultChannelName)
+        .setRequired(false)
+        .setMaxLength(100);
+      
+      // Add input for modmail channel
+      const modmailChannelInput = new TextInputBuilder()
+        .setCustomId('modmailChannel')
+        .setLabel('Modmail channel name (optional)')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('modmail-tickets')
+        .setRequired(false)
+        .setMaxLength(100);
+      
+      // Add a description field
+      const descriptionInput = new TextInputBuilder()
+        .setCustomId('description')
+        .setLabel('Logging system description (optional)')
+        .setStyle(TextInputStyle.Paragraph)
+        .setPlaceholder('Add a custom description for your logging system...')
+        .setRequired(false)
+        .setMaxLength(1000);
+      
+      // Add toggle for enabling modmail
+      const modmailToggleInput = new TextInputBuilder()
+        .setCustomId('enableModmail')
+        .setLabel('Enable Modmail? (yes/no)')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('yes')
+        .setRequired(false)
+        .setMaxLength(3);
+      
+      // Add the components to the modal
+      const firstActionRow = new ActionRowBuilder().addComponents(channelNameInput);
+      const secondActionRow = new ActionRowBuilder().addComponents(modmailChannelInput);
+      const thirdActionRow = new ActionRowBuilder().addComponents(modmailToggleInput);
+      const fourthActionRow = new ActionRowBuilder().addComponents(descriptionInput);
+      
+      // Add inputs to the modal
+      modal.addComponents(firstActionRow, secondActionRow, thirdActionRow, fourthActionRow);
+      
+      // Update setup progress to step 1 (starting fresh)
+      await guildSettings.updateSetupProgress(1);
+      
+      // Show the modal
+      await interaction.showModal(modal);
+      
+    } else if (interaction.customId === 'setup-confirm') {
       await interaction.deferUpdate();
       
       // Get guild settings
       const guildSettings = await models.Guild.findOrCreateGuild(interaction.guild.id);
+      
+      // Mark setup as completed and clear temporary setup data
+      await guildSettings.clearSetupData();
       
       // Build success message
       let successMessage = `Setup completed successfully! The logging system is now active.\n\nUse \`/logs\` to manage log channels for each category, \`/ignore\` to configure ignored channels/roles, and \`/help\` to see all available commands.`;

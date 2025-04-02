@@ -1,12 +1,39 @@
 require('dotenv').config();
-const { ShardingManager } = require('discord.js');
+const { ShardingManager, Routes } = require('discord.js');
 const { logger } = require('./logger');
 const path = require('path');
+const { REST } = require('@discordjs/rest');
 
-// Create sharding manager with more resilient configuration
+// Initialize REST API with token
+const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
+
+// Custom function to calculate number of shards based on guild count
+const calculateShardCount = async () => {
+  try {
+    // Get recommended shard count from Discord
+    const { shards: recommendedShards } = await rest.get(Routes.gatewayBot());
+    
+    // Get application information (includes guild count)
+    const appInfo = await rest.get(Routes.oauth2CurrentApplication());
+    const guildCount = appInfo.approximate_guild_count || 1;
+    
+    // Use 1 shard per guild as recommended by Discord
+    const customShards = guildCount;
+    
+    logger.info(`Discord recommended ${recommendedShards} shards for ${guildCount} guilds`);
+    logger.info(`Using 1:1 ratio: ${customShards} shards (1 shard per guild)`);
+    
+    return customShards;
+  } catch (error) {
+    logger.error('Error calculating custom shard count:', error);
+    logger.error(error);
+    return 1; // Default to 1 shard if calculation fails
+  }
+};
+
+// Create sharding manager with custom shard count (1 shard per guild)
 const manager = new ShardingManager(path.join(__dirname, '../index.js'), {
   token: process.env.TOKEN,
-  totalShards: 'auto', // Auto-determine the number of shards based on guild count
   respawn: true, // Automatically respawn crashed shards
   shardArgs: ['--shard'],
   spawnTimeout: 120000, // Increase timeout to 2 minutes (from default 30s)
@@ -80,9 +107,16 @@ module.exports = {
     logger.info('Starting sharding manager...');
     
     try {
+      // Calculate custom shard count
+      const customShardCount = await calculateShardCount();
+      logger.info(`Setting shard count to ${customShardCount} (1 shard per guild)`);
+      
+      // Override totalShards setting with our custom calculation
+      manager.totalShards = customShardCount;
+      
       // Use retry mechanism with exponential backoff
       await retry(async () => {
-        logger.info('Attempting to spawn shards...');
+        logger.info(`Attempting to spawn ${customShardCount} shards...`);
         await manager.spawn();
         logger.info('All shards spawned successfully');
       }, 3, 10000); // Max 3 retries, starting with 10 second delay
