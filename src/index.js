@@ -17,7 +17,7 @@ const client = new Client({
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildVoiceStates,
-    GatewayIntentBits.GuildModeration,
+    GatewayIntentBits.GuildModeration || GatewayIntentBits.GuildBans, // Fallback to GuildBans if GuildModeration is not available
     GatewayIntentBits.DirectMessages, // Required for DM modmail system
     GatewayIntentBits.DirectMessageReactions,
     GatewayIntentBits.DirectMessageTyping
@@ -124,7 +124,12 @@ async function registerCommands() {
   logger.info(`Total unique commands loaded: ${commandNames.size}`);
 
   // Register commands with Discord - Force reload approach with retries
-  const rest = new REST().setToken(process.env.TOKEN);
+  const token = process.env.DISCORD_BOT_TOKEN || process.env.TOKEN;
+  if (!token) {
+    logger.error('No Discord bot token found in environment variables!');
+    process.exit(1);
+  }
+  const rest = new REST().setToken(token);
   
   // Utility function for delay with exponential backoff
   const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -160,8 +165,9 @@ async function registerCommands() {
 
     // Step 1: Retrieve existing commands with retry mechanism
     logger.info('Retrieving current application commands...');
+    const clientId = process.env.DISCORD_APPLICATION_ID || process.env.CLIENT_ID;
     const existingCommands = await retryOperation(
-      () => rest.get(Routes.applicationCommands(process.env.CLIENT_ID)),
+      () => rest.get(Routes.applicationCommands(clientId)),
       3, 2000
     );
     
@@ -172,7 +178,7 @@ async function registerCommands() {
       for (const cmd of existingCommands) {
         logger.info(`Deleting command: ${cmd.name} (${cmd.id})`);
         await retryOperation(
-          () => rest.delete(Routes.applicationCommand(process.env.CLIENT_ID, cmd.id)),
+          () => rest.delete(Routes.applicationCommand(clientId, cmd.id)),
           3, 1000
         );
       }
@@ -186,7 +192,7 @@ async function registerCommands() {
     logger.info('Registering all commands from scratch...');
     const data = await retryOperation(
       () => rest.put(
-        Routes.applicationCommands(process.env.CLIENT_ID),
+        Routes.applicationCommands(clientId),
         { body: commands }
       ),
       3, 5000
@@ -201,7 +207,7 @@ async function registerCommands() {
       // First clear existing guild commands with retry mechanism
       const existingGuildCommands = await retryOperation(
         () => rest.get(
-          Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.SUPPORT_GUILD_ID)
+          Routes.applicationGuildCommands(clientId, process.env.SUPPORT_GUILD_ID)
         ),
         3, 1000
       );
@@ -211,7 +217,7 @@ async function registerCommands() {
         for (const cmd of existingGuildCommands) {
           await retryOperation(
             () => rest.delete(
-              Routes.applicationGuildCommand(process.env.CLIENT_ID, process.env.SUPPORT_GUILD_ID, cmd.id)
+              Routes.applicationGuildCommand(clientId, process.env.SUPPORT_GUILD_ID, cmd.id)
             ),
             3, 1000
           );
@@ -221,7 +227,7 @@ async function registerCommands() {
       // Then register new guild commands with retry mechanism
       await retryOperation(
         () => rest.put(
-          Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.SUPPORT_GUILD_ID),
+          Routes.applicationGuildCommands(clientId, process.env.SUPPORT_GUILD_ID),
           { body: commands }
         ),
         3, 5000
@@ -284,11 +290,39 @@ async function init() {
     // Register events
     registerEvents();
     
+    // Debug token state - safely mask most of the token
+    const token = process.env.DISCORD_BOT_TOKEN || process.env.TOKEN;
+    if (!token) {
+      logger.error('No Discord bot token found in environment variables (checked DISCORD_BOT_TOKEN and TOKEN)!');
+      process.exit(1);
+    }
+    
+    const tokenLength = token.length;
+    const tokenFirstChars = token.substring(0, 5);
+    const tokenLastChars = token.substring(tokenLength - 5);
+    logger.info(`Using token of length ${tokenLength}, starting with ${tokenFirstChars}... and ending with ...${tokenLastChars}`);
+    
+    // Check for client ID
+    const clientId = process.env.DISCORD_APPLICATION_ID || process.env.CLIENT_ID;
+    if (!clientId) {
+      logger.error('No Discord client ID found in environment variables (checked DISCORD_APPLICATION_ID and CLIENT_ID)!');
+      process.exit(1);
+    }
+    logger.info(`Using client ID: ${clientId}`);
+    
     // Register commands
     await registerCommands();
     
-    // Login to Discord
-    await client.login(process.env.TOKEN);
+    // Login to Discord with direct token reference
+    logger.info('Attempting to log in to Discord...');
+    try {
+      await client.login(token);
+      logger.info('Successfully logged in to Discord!');
+    } catch (loginError) {
+      logger.error('Failed to log in to Discord:', loginError);
+      logger.error('Login error details:', loginError.message);
+      throw loginError;
+    }
     
     logger.info('Bot initialization completed');
   } catch (error) {

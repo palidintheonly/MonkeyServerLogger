@@ -5,41 +5,58 @@ const path = require('path');
 const { REST } = require('@discordjs/rest');
 
 // Validate token
-if (!process.env.TOKEN) {
-  logger.error('Discord bot TOKEN is missing! Please add it to your environment variables.');
+const token = process.env.DISCORD_BOT_TOKEN || process.env.TOKEN;
+if (!token) {
+  logger.error('No Discord bot token found in environment variables (checked DISCORD_BOT_TOKEN and TOKEN)!');
   process.exit(1);
 }
 
+// Log token length for debugging (safely)
+const tokenLength = token.length;
+const tokenFirstChars = token.substring(0, 5);
+const tokenLastChars = token.substring(tokenLength - 5);
+logger.info(`Using token of length ${tokenLength}, starting with ${tokenFirstChars}... and ending with ...${tokenLastChars}`);
 // Initialize REST API with token 
-const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
+const rest = new REST({ version: '10' }).setToken(token);
 
 // Custom function to calculate number of shards based on guild count
 const calculateShardCount = async () => {
   try {
-    // Get recommended shard count from Discord
-    const { shards: recommendedShards } = await rest.get(Routes.gatewayBot());
+    logger.info(`[SHARD MANAGER] Calculating shard count using token: ${token.substring(0, 5)}...`);
     
-    // Get application information (includes guild count)
-    const appInfo = await rest.get(Routes.oauth2CurrentApplication());
-    const guildCount = appInfo.approximate_guild_count || 1;
-    
-    // Use 1 shard per guild as recommended by Discord
-    const customShards = guildCount;
-    
-    logger.info(`Discord recommended ${recommendedShards} shards for ${guildCount} guilds`);
-    logger.info(`Using 1:1 ratio: ${customShards} shards (1 shard per guild)`);
-    
-    return customShards;
+    // Try using a more direct approach
+    try {
+      logger.info('[SHARD MANAGER] Attempting to get gateway bot info...');
+      // Get recommended shard count from Discord
+      const { shards: recommendedShards } = await rest.get(Routes.gatewayBot());
+      
+      logger.info(`[SHARD MANAGER] Successfully retrieved gateway bot info: ${recommendedShards} recommended shards`);
+      
+      // Get application information (includes guild count)
+      const appInfo = await rest.get(Routes.oauth2CurrentApplication());
+      const guildCount = appInfo.approximate_guild_count || 1;
+      
+      // Use 1 shard per guild as recommended by Discord
+      const customShards = guildCount;
+      
+      logger.info(`[SHARD MANAGER] Discord recommended ${recommendedShards} shards for ${guildCount} guilds`);
+      logger.info(`[SHARD MANAGER] Using 1:1 ratio: ${customShards} shards (1 shard per guild)`);
+      
+      return customShards;
+    } catch (gatewayError) {
+      logger.error('[SHARD MANAGER] Failed to get gateway bot info:', gatewayError);
+      logger.warn('[SHARD MANAGER] Falling back to 1 shard due to API error');
+      return 1; // Default to 1 shard if gateway info fails
+    }
   } catch (error) {
-    logger.error('Error calculating custom shard count:', error);
-    logger.error(error);
+    logger.error('[SHARD MANAGER] Error calculating custom shard count:', error);
     return 1; // Default to 1 shard if calculation fails
   }
 };
 
 // Create sharding manager with custom shard count (1 shard per guild)
 const manager = new ShardingManager(path.join(__dirname, '../index.js'), {
-  token: process.env.TOKEN,
+  token: token, // Use the token we validated above
   respawn: true, // Automatically respawn crashed shards
   shardArgs: ['--shard'],
   spawnTimeout: 120000, // Increase timeout to 2 minutes (from default 30s)
