@@ -53,6 +53,10 @@ pids
 .replit
 replit.nix
 .config
+.cache
+.upm
+.breakpoints
+.replenv
 
 # Misc
 .DS_Store
