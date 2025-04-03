@@ -69,12 +69,37 @@ async function main() {
     // Log commands list
     commands.forEach(cmd => logger.debug(`- ${cmd.name}`));
     
-    // Handle deployment based on target (global or guild-specific)
-    const devGuildIds = cmdConfig.devGuildIds || [];
+    // Get all guilds for guild-specific command deployment
+    const guilds = [];
     
+    // First, use any configured development guild IDs
+    const devGuildIds = cmdConfig.devGuildIds || [];
     if (devGuildIds.length > 0) {
-      // Deploy to specific development guild(s)
-      for (const guildId of devGuildIds) {
+      devGuildIds.forEach(guildId => {
+        if (!guilds.includes(guildId)) {
+          guilds.push(guildId);
+        }
+      });
+    }
+    
+    // If we have a BOT_GUILDS environment variable, parse and use it
+    if (process.env.BOT_GUILDS) {
+      const configuredGuilds = process.env.BOT_GUILDS.split(',').map(id => id.trim());
+      configuredGuilds.forEach(guildId => {
+        if (!guilds.includes(guildId)) {
+          guilds.push(guildId);
+        }
+      });
+    }
+    
+    // If no guilds specified, log an error but continue (we'll use the ready event to deploy to actual guilds)
+    if (guilds.length === 0) {
+      logger.warn('No guild IDs specified for command deployment. Will deploy to joined guilds on bot startup.');
+    }
+    
+    // Deploy to each guild
+    for (const guildId of guilds) {
+      try {
         logger.info(`Deploying ${commands.length} commands to guild ${guildId}...`);
         
         await rest.put(
@@ -83,17 +108,21 @@ async function main() {
         );
         
         logger.info(`Successfully deployed commands to guild ${guildId}`);
+      } catch (guildError) {
+        logger.error(`Failed to deploy commands to guild ${guildId}: ${guildError.message}`);
       }
-    } else {
-      // Deploy globally
-      logger.info(`Deploying ${commands.length} commands globally...`);
-      
+    }
+    
+    // Clear global commands to ensure all commands are guild-specific
+    try {
+      logger.info('Clearing global commands to ensure all commands are guild-specific...');
       await rest.put(
         Routes.applicationCommands(clientId),
-        { body: commands }
+        { body: [] }
       );
-      
-      logger.info('Successfully deployed commands globally');
+      logger.info('Successfully cleared global commands');
+    } catch (globalError) {
+      logger.error(`Failed to clear global commands: ${globalError.message}`);
     }
   } catch (error) {
     logger.error(`Command deployment error: ${error.message}`, { error });

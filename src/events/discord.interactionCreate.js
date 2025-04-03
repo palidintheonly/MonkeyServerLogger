@@ -3,9 +3,9 @@
  */
 const { Events, Collection, InteractionType } = require('discord.js');
 const { logger, interactionLogger } = require('../utils/logger');
-const { createErrorEmbed } = require('../utils/embedBuilder');
+const { createErrorEmbed, createSuccessEmbed } = require('../utils/embedBuilder');
 const { bot: botConfig } = require('../config');
-const { createModmailThread } = require('../utils/modmail');
+const { createModmailThread, createModmailTranscript } = require('../utils/modmail');
 
 module.exports = {
   name: Events.InteractionCreate,
@@ -44,6 +44,10 @@ module.exports = {
           // Reply to modmail thread
           else if (customId === 'modmail_reply') {
             await handleModmailReply(interaction, client);
+          }
+          // Generate transcript for modmail thread
+          else if (customId === 'modmail_transcript') {
+            await handleModmailTranscript(interaction, client);
           }
           // Handle any other button/select menu interactions
           else {
@@ -520,7 +524,21 @@ async function handleModmailClose(interaction, client) {
     
     // Send a message to the channel
     await channel.send({
-      content: `📬 This modmail thread has been closed by ${interaction.user.tag}`
+      content: `📬 This modmail thread has been closed by ${interaction.user.tag}`,
+      components: [
+        {
+          type: 1, // ACTION_ROW
+          components: [
+            {
+              type: 2, // BUTTON
+              style: 1, // PRIMARY
+              label: 'Generate Transcript',
+              custom_id: 'modmail_transcript',
+              emoji: { name: '📄' }
+            }
+          ]
+        }
+      ]
     });
     
     // Try to notify the user
@@ -680,6 +698,49 @@ async function handleModmailReplySubmit(interaction, client) {
     
     return interaction.editReply({
       content: 'An error occurred while trying to send your reply.'
+    });
+  }
+}
+
+/**
+ * Handle modmail transcript generation
+ * @param {Interaction} interaction - Button interaction
+ * @param {Client} client - Discord client
+ */
+async function handleModmailTranscript(interaction, client) {
+  await interaction.deferReply();
+  
+  try {
+    // Get the channel/thread
+    const channel = interaction.channel;
+    
+    // Get the thread from the database
+    const thread = await client.db.ModmailThread.findOne({
+      where: { id: channel.id }
+    });
+    
+    if (!thread) {
+      return interaction.editReply({
+        content: 'This doesn\'t appear to be a modmail thread, or the thread data is missing.'
+      });
+    }
+    
+    // Generate transcript
+    const sendToUser = interaction.member.permissions.has('ManageMessages');
+    const transcriptUrl = await createModmailTranscript(channel, client, sendToUser);
+    
+    // Notify about transcript generation
+    return interaction.editReply({
+      embeds: [createSuccessEmbed(
+        `Modmail transcript has been generated.${sendToUser ? ' A copy has also been sent to the user.' : ''}`,
+        'Transcript Generated'
+      )]
+    });
+  } catch (error) {
+    logger.error(`Error generating transcript: ${error.message}`, { error });
+    
+    return interaction.editReply({
+      content: 'An error occurred while trying to generate the transcript.'
     });
   }
 }
