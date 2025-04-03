@@ -6,6 +6,7 @@ const { logger, interactionLogger } = require('../utils/logger');
 const { createErrorEmbed, createSuccessEmbed } = require('../utils/embedBuilder');
 const { bot: botConfig } = require('../config');
 const { createModmailThread, createModmailTranscript, findThreadWithFallback } = require('../utils/modmail');
+const { EPHEMERAL_FLAG, convertEphemeralOption } = require('../utils/interactionUtils');
 
 module.exports = {
   name: Events.InteractionCreate,
@@ -53,7 +54,7 @@ module.exports = {
           else {
             await interaction.reply({
               content: 'This interaction is not currently handled.',
-              ephemeral: true
+              flags: EPHEMERAL_FLAG
             });
           }
           break;
@@ -70,7 +71,7 @@ module.exports = {
           else {
             await interaction.reply({
               content: 'This modal submission is not currently handled.',
-              ephemeral: true
+              flags: EPHEMERAL_FLAG
             });
           }
           break;
@@ -94,7 +95,7 @@ module.exports = {
         try {
           await interaction.editReply({
             embeds: [createErrorEmbed('An error occurred while processing this interaction.')],
-            ephemeral: true
+            flags: 1 << 6
           }).catch((followupError) => {
             logger.error(`Error sending error response: ${followupError.message}`);
           });
@@ -105,7 +106,7 @@ module.exports = {
         try {
           await interaction.reply({
             embeds: [createErrorEmbed('An error occurred while processing this interaction.')],
-            ephemeral: true
+            flags: 1 << 6
           }).catch((replyError) => {
             logger.error(`Could not send error response: ${replyError.message}`);
           });
@@ -131,7 +132,7 @@ async function handleCommand(interaction, client) {
     logger.warn(`User ${interaction.user.tag} tried to use unknown command: ${interaction.commandName}`);
     return interaction.reply({ 
       content: 'This command doesn\'t exist or is not currently available.',
-      ephemeral: true
+      flags: 1 << 6
     });
   }
   
@@ -139,7 +140,7 @@ async function handleCommand(interaction, client) {
   if (command.guildOnly && !interaction.guild) {
     return interaction.reply({
       content: 'This command can only be used in a server, not in DMs.',
-      ephemeral: true
+      flags: 1 << 6
     });
   }
   
@@ -159,7 +160,7 @@ async function handleCommand(interaction, client) {
       if (guildSettings && guildSettings.isCommandDisabled(interaction.commandName)) {
         return interaction.reply({
           content: 'This command has been disabled in this server.',
-          ephemeral: true
+          flags: 1 << 6
         });
       }
     } catch (error) {
@@ -187,7 +188,7 @@ async function handleCommand(interaction, client) {
         const timeLeft = (expirationTime - now) / 1000;
         return interaction.reply({
           content: `Please wait ${timeLeft.toFixed(1)} more second(s) before using the \`${command.data.name}\` command again.`,
-          ephemeral: true
+          flags: 1 << 6
         });
       }
     }
@@ -208,12 +209,12 @@ async function handleCommand(interaction, client) {
       if (interaction.deferred || interaction.replied) {
         await interaction.editReply({
           embeds: [createErrorEmbed(`There was an error executing this command! ${error.message}`)],
-          ephemeral: true
+          flags: 1 << 6
         });
       } else {
         await interaction.reply({
           embeds: [createErrorEmbed(`There was an error executing this command! ${error.message}`)],
-          ephemeral: true
+          flags: 1 << 6
         });
       }
     } catch (responseError) {
@@ -661,7 +662,7 @@ async function handleModmailReply(interaction, client) {
       logger.warn(`Staff tried to reply to a thread that doesn't exist in database. Channel ID: ${threadId}, Guild ID: ${interaction.guild?.id}`);
       return interaction.reply({
         content: 'This modmail thread could not be found in the database. It may have been deleted or there was an error during creation.',
-        ephemeral: true
+        flags: 1 << 6
       });
     }
     
@@ -694,7 +695,7 @@ async function handleModmailReply(interaction, client) {
     
     await interaction.reply({
       content: 'An error occurred while trying to open the reply form.',
-      ephemeral: true
+      flags: 1 << 6
     });
   }
 }

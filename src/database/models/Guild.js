@@ -477,26 +477,69 @@ function deepMerge(target, source) {
     target = {};
   }
   
-  // For each property in source
-  for (const key in source) {
-    // Skip prototype pollution properties
-    if (key === '__proto__' || key === 'constructor') {
-      continue;
-    }
-    // If source property is an object (and not null or array)
-    if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
-      // Make sure target property is an object we can merge into
-      if (typeof target[key] !== 'object' || target[key] === null || Array.isArray(target[key])) {
-        target[key] = {};
-      }
-      
-      // Recursively merge the objects
-      deepMerge(target[key], source[key]);
-    } else {
-      // For non-objects (including arrays), just assign the property
-      target[key] = source[key];
-    }
+  // If source is not an object or is null, return target
+  if (typeof source !== 'object' || source === null) {
+    return target;
   }
   
-  return target;
+  // Prevent merging into source
+  if (target === source) {
+    return { ...target };
+  }
+  
+  // Use a Set to keep track of objects we've seen to detect circular references
+  const seen = new Set();
+  
+  // Helper function for recursive merge with cycle detection
+  function mergeRecursive(target, source, path = []) {
+    // Add current objects to seen set with their paths
+    const targetPath = [...path, 'target'].join('.');
+    const sourcePath = [...path, 'source'].join('.');
+    
+    // Check for circular references
+    if (seen.has(targetPath) || seen.has(sourcePath)) {
+      return target; // Break the recursion for circular references
+    }
+    
+    seen.add(targetPath);
+    seen.add(sourcePath);
+    
+    // For each property in source
+    for (const key in source) {
+      // Skip prototype pollution properties
+      if (key === '__proto__' || key === 'constructor') {
+        continue;
+      }
+      
+      // Skip properties that would cause circular references
+      if (source[key] === target || source[key] === source) {
+        continue;
+      }
+      
+      // If source property is an object (and not null or array)
+      if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
+        // Make sure target property is an object we can merge into
+        if (typeof target[key] !== 'object' || target[key] === null || Array.isArray(target[key])) {
+          target[key] = {};
+        }
+        
+        // Check depth to prevent excessive recursion (max 10 levels deep)
+        if (path.length < 10) {
+          // Recursively merge the objects
+          mergeRecursive(target[key], source[key], [...path, key]);
+        } else {
+          // At max depth, just assign directly
+          target[key] = { ...source[key] };
+        }
+      } else {
+        // For non-objects (including arrays), just assign the property
+        target[key] = source[key];
+      }
+    }
+    
+    return target;
+  }
+  
+  // Start the recursive merge
+  return mergeRecursive(target, source);
 }

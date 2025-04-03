@@ -72,7 +72,7 @@ module.exports = {
       });
     }
     
-    return interaction.reply({ embeds: [embed], ephemeral: true });
+    return interaction.reply({ embeds: [embed], flags: 1 << 6 }); // Use flags instead of ephemeral
   },
   
   async showCommandHelp(interaction, client, commandName) {
@@ -82,7 +82,7 @@ module.exports = {
     if (!command) {
       return interaction.reply({
         content: `I couldn't find a command called \`${commandName}\`.`,
-        ephemeral: true
+        flags: 1 << 6 // Use flags instead of ephemeral
       });
     }
     
@@ -96,6 +96,6 @@ module.exports = {
       `Command: /${commandName}`
     );
     
-    return interaction.reply({ embeds: [embed], ephemeral: true });
+    return interaction.reply({ embeds: [embed], flags: 1 << 6 }); // Use flags instead of ephemeral
   }
 };

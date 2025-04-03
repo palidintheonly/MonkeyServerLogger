@@ -14,7 +14,7 @@ module.exports = {
   
   async execute(interaction, client) {
     // Defer reply as this might take a moment to process
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: 1 << 6 }); // Use flags instead of ephemeral
     
     try {
       // Find all guilds where both the bot and user are members and modmail is enabled
