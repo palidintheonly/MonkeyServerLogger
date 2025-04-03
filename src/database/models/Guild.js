@@ -335,6 +335,10 @@ function deepMerge(target, source) {
   
   // For each property in source
   for (const key in source) {
+    // Skip prototype pollution properties
+    if (key === '__proto__' || key === 'constructor') {
+      continue;
+    }
     // If source property is an object (and not null or array)
     if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
       // Make sure target property is an object we can merge into
