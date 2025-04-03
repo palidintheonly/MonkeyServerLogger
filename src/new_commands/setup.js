@@ -2,6 +2,7 @@ const {
   SlashCommandBuilder,
   ActionRowBuilder, 
   PermissionsBitField, 
+  PermissionFlagsBits,
   ChannelType, 
   ButtonBuilder, 
   ButtonStyle 
@@ -71,7 +72,14 @@ module.exports = {
       const guildSettings = await models.Guild.findOrCreateGuild(interaction.guild.id);
       
       // Handle different subcommands
-      const subcommand = interaction.options.getSubcommand();
+      let subcommand;
+      try {
+        subcommand = interaction.options.getSubcommand();
+      } catch (error) {
+        // No subcommand specified, default to wizard
+        logger.warn(`No subcommand specified for setup command by ${interaction.user.tag}. Defaulting to wizard.`);
+        subcommand = 'wizard';
+      }
       
       switch (subcommand) {
         case 'wizard':
@@ -124,12 +132,22 @@ module.exports = {
     try {
       // Get options from the slash command
       const logsChannel = interaction.options.getChannel('logs_channel');
+      
+      // Check if logs_channel was provided
+      if (!logsChannel) {
+        await interaction.editReply({
+          embeds: [createErrorEmbed('You must specify a logging channel. Please run the command again with a valid text channel.')]
+        });
+        return;
+      }
+      
       const verboseLogging = interaction.options.getBoolean('verbose_logging') ?? false;
       
       // Check permissions in the log channel
       const permissions = logsChannel.permissionsFor(interaction.guild.members.me);
-      if (!permissions.has(PermissionsBitField.Flags.SendMessages) || 
-          !permissions.has(PermissionsBitField.Flags.EmbedLinks)) {
+      if (!permissions || 
+          !permissions.has(PermissionFlagsBits.SendMessages) || 
+          !permissions.has(PermissionFlagsBits.EmbedLinks)) {
         await interaction.editReply({
           embeds: [createErrorEmbed('I don\'t have permission to send messages and embeds in that channel. Please adjust the permissions or choose another channel.')]
         });
@@ -247,10 +265,19 @@ module.exports = {
       const channel = interaction.options.getChannel('channel');
       const verbose = interaction.options.getBoolean('verbose') ?? false;
       
+      // Check if channel was provided
+      if (!channel) {
+        await interaction.editReply({
+          embeds: [createErrorEmbed('You must specify a logging channel. Please run the command again with a valid text channel.')]
+        });
+        return;
+      }
+      
       // Check permissions in the log channel
       const permissions = channel.permissionsFor(interaction.guild.members.me);
-      if (!permissions.has(PermissionsBitField.Flags.SendMessages) || 
-          !permissions.has(PermissionsBitField.Flags.EmbedLinks)) {
+      if (!permissions || 
+          !permissions.has(PermissionFlagsBits.SendMessages) || 
+          !permissions.has(PermissionFlagsBits.EmbedLinks)) {
         await interaction.editReply({
           embeds: [createErrorEmbed('I don\'t have permission to send messages and embeds in that channel. Please adjust the permissions or choose another channel.')]
         });
@@ -338,6 +365,9 @@ module.exports = {
    * @param {Object} guildSettings - Guild settings from database
    */
   async handleReset(interaction, client, guildSettings) {
+    // Defer reply first
+    await interaction.deferReply({ ephemeral: true });
+    
     try {
       // Create confirmation buttons
       const confirmButton = new ButtonBuilder()

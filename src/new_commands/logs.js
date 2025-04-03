@@ -1,6 +1,7 @@
 const { 
   SlashCommandBuilder, 
   PermissionsBitField, 
+  PermissionFlagsBits,
   ChannelType, 
   ActionRowBuilder, 
   ButtonBuilder, 
