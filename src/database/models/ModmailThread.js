@@ -82,13 +82,18 @@ module.exports = (sequelize) => {
     
     /**
      * Update the last activity timestamp
+     * @param {string} [source] - Optional source of the activity update for logging
      */
-    async updateActivity() {
+    async updateActivity(source = 'unknown') {
       try {
-        this.lastMessageAt = new Date();
+        const now = new Date();
+        this.lastMessageAt = now;
         await this.save();
+        
+        // Log the activity update with timestamp for troubleshooting
+        logger.debug(`Thread ${this.id} activity updated from source '${source}' at ${now.toISOString()}`);
       } catch (error) {
-        logger.error(`Error updating thread activity for ${this.id}: ${error.message}`);
+        logger.error(`Error updating thread activity for ${this.id}: ${error.message}`, { error });
         throw error;
       }
     }

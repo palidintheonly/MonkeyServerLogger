@@ -145,7 +145,7 @@ async function handleExistingThreads(message, client, existingThreads) {
       
       // Thread exists and channel exists, forward the message
       // Update the thread's activity timestamp
-      await thread.updateActivity();
+      await thread.updateActivity('user_dm');
       
       // Create an embed for the forwarded message
       const forwardEmbed = {
@@ -171,12 +171,77 @@ async function handleExistingThreads(message, client, existingThreads) {
       // Send confirmation to the user
       await message.react('✅').catch(() => {});
       
+      // Add a friendly message to remind the user they're in an active conversation
+      // but only do it occasionally (every 3 messages) to avoid being spammy
+      if (thread.messageCount % 3 === 0) {
+        await message.channel.send({
+          content: `✉️ You're chatting with **${guild.name}**. Staff will see and respond to your messages.`
+        }).catch(() => {});
+      }
+      
       return;
     }
     
+    // Check if any of the existingThreads had recent staff activity
+    // Look for the most recently active thread
+    const sortedThreads = [...existingThreads].sort((a, b) => 
+      new Date(b.lastMessageAt) - new Date(a.lastMessageAt)
+    );
+    
+    // If the most recent thread was active within the last hour, use it automatically
+    const mostRecentThread = sortedThreads[0];
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    
+    if (mostRecentThread && new Date(mostRecentThread.lastMessageAt) > oneHourAgo) {
+      // Use the most recently active thread automatically
+      logger.info(`Using most recently active thread ${mostRecentThread.id} for user ${message.author.id}`);
+      
+      const guild = client.guilds.cache.get(mostRecentThread.guildId);
+      if (!guild) return; // Unexpected error, fall back to selection
+      
+      const channel = await guild.channels.fetch(mostRecentThread.id).catch(() => null);
+      if (!channel) return; // Channel not found, fall back to selection
+      
+      // Forward the message to this thread
+      await mostRecentThread.updateActivity('user_dm_recent_thread');
+      
+      // Create an embed for the forwarded message
+      const forwardEmbed = {
+        author: {
+          name: message.author.tag,
+          icon_url: message.author.displayAvatarURL({ dynamic: true })
+        },
+        description: message.content || '*No content*',
+        color: 0x2F3136, // Discord dark theme color
+        timestamp: new Date().toISOString()
+      };
+      
+      // Send the embed and attachments to the thread channel
+      await channel.send({ 
+        embeds: [forwardEmbed],
+        files: [...message.attachments.values()]
+      });
+      
+      // Increment message count
+      mostRecentThread.messageCount += 1;
+      await mostRecentThread.save();
+      
+      // Send confirmation to the user
+      await message.react('✅').catch(() => {});
+      
+      // Let the user know which server they're talking to
+      await message.channel.send({
+        content: `✉️ Your message was sent to **${guild.name}**. If you want to contact a different server instead, please let me know.`
+      }).catch(() => {});
+      
+      return;
+    }
+    
+    // If no recent activity or multiple threads and none recently active,
+    // fall back to the selection menu
+    
     // User has multiple active threads
     // Create a selection menu for the user to choose which thread to continue
-    
     const selectOptions = await Promise.all(
       existingThreads.map(async thread => {
         const guild = client.guilds.cache.get(thread.guildId);

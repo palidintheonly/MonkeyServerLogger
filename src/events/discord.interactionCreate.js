@@ -736,8 +736,9 @@ async function handleModmailReplySubmit(interaction, client) {
       });
     }
     
-    // Update the thread's activity timestamp
-    await thread.updateActivity();
+    // Update the thread's activity timestamp with the current time
+    // This is critical for the continuity feature to work
+    await thread.updateActivity('staff_reply');
     
     // Try to send the reply to the user
     try {
@@ -758,7 +759,14 @@ async function handleModmailReplySubmit(interaction, client) {
         timestamp: new Date().toISOString()
       };
       
+      // Send a message encouraging continued conversation
+      const continueMsg = {
+        content: `💬 **You can reply directly to this message to continue the conversation with ${interaction.guild.name}.**`,
+      };
+      
+      // Send the reply embed first, then the info message
       await user.send({ embeds: [replyEmbed] });
+      await user.send(continueMsg);
       
       // Echo the reply in the thread
       const echoEmbed = {
@@ -775,6 +783,12 @@ async function handleModmailReplySubmit(interaction, client) {
       };
       
       await interaction.channel.send({ embeds: [echoEmbed] });
+      
+      // Add a note that continuation message was sent
+      await interaction.channel.send({ 
+        content: `ℹ️ The user has been notified they can reply directly to continue this conversation.`,
+        flags: 1 << 6 // Ephemeral
+      });
       
       // Increment message count
       thread.messageCount += 1;
