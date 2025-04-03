@@ -131,8 +131,14 @@ async function handleCommand(interaction, client) {
   // Check if command is disabled in this guild
   if (interaction.guild) {
     try {
-      const guildSettings = await client.db.Guild.findOne({
-        where: { guildId: interaction.guild.id }
+      // Find or create the guild settings first using proper format
+      // Note: We're using the correct method signature with an object
+      const [guildSettings] = await client.db.Guild.findOrCreate({
+        where: { guildId: interaction.guild.id },
+        defaults: { 
+          guildId: interaction.guild.id,
+          guildName: interaction.guild.name 
+        }
       });
       
       if (guildSettings && guildSettings.isCommandDisabled(interaction.commandName)) {
@@ -142,7 +148,7 @@ async function handleCommand(interaction, client) {
         });
       }
     } catch (error) {
-      logger.error(`Error checking command status: ${error.message}`);
+      logger.error(`Error checking command status: ${error.message}`, { error });
       // Continue execution if we can't check if it's disabled
     }
   }
@@ -222,9 +228,13 @@ async function handleModmailGuildSelect(interaction, client) {
       });
     }
     
-    // Check if modmail is enabled in that guild
-    const guildSettings = await client.db.Guild.findOne({
-      where: { guildId: selectedGuildId }
+    // Check if modmail is enabled in that guild using proper format
+    const [guildSettings] = await client.db.Guild.findOrCreate({
+      where: { guildId: selectedGuildId },
+      defaults: { 
+        guildId: selectedGuildId,
+        guildName: guild.name 
+      }
     });
     
     const modmailEnabled = guildSettings && guildSettings.getSetting('modmail.enabled');
@@ -413,9 +423,13 @@ async function handleNewModmailConversation(interaction, client) {
       const member = await guild.members.fetch(interaction.user.id).catch(() => null);
       if (!member) continue;
       
-      // Check if modmail is enabled
-      const guildSettings = await client.db.Guild.findOne({
-        where: { guildId }
+      // Check if modmail is enabled using proper format
+      const [guildSettings] = await client.db.Guild.findOrCreate({
+        where: { guildId: guildId },
+        defaults: { 
+          guildId: guildId,
+          guildName: guild.name 
+        }
       });
       
       const modmailEnabled = guildSettings && guildSettings.getSetting('modmail.enabled');

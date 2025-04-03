@@ -64,15 +64,39 @@ async function connectToDatabase() {
     await sequelize.authenticate();
     logger.info('Database connection established successfully');
     
-    // Sync models with database (in development, force: true will drop tables)
-    await sequelize.sync({ 
-      force: process.env.DB_FORCE_SYNC === 'true',
-      alter: process.env.DB_ALTER_SYNC === 'true' && process.env.DB_FORCE_SYNC !== 'true'
-    });
-    logger.info('Database models synchronized');
+    // Fix for the guilds_backup table issue - drop it if it exists
+    try {
+      await sequelize.query('DROP TABLE IF EXISTS guilds_backup');
+      logger.info('Dropped guilds_backup table to prevent sync issues');
+    } catch (dropError) {
+      logger.warn(`Error dropping guilds_backup table: ${dropError.message}`);
+      // Continue execution even if this fails
+    }
     
-    // Set up optional scheduled backups
+    // Sync models with database (in development, force: true will drop tables)
+    try {
+      await sequelize.sync({ 
+        force: process.env.DB_FORCE_SYNC === 'true',
+        alter: process.env.DB_ALTER_SYNC === 'true' && process.env.DB_FORCE_SYNC !== 'true'
+      });
+      logger.info('Database models synchronized');
+    } catch (syncError) {
+      // If the error is related to guilds_backup, it's likely from a previous backup attempt
+      if (syncError.message && syncError.message.includes('guilds_backup')) {
+        logger.warn('Database synchronization warning (related to backup): ' + syncError.message);
+      } else if (syncError.name === 'SequelizeUniqueConstraintError') {
+        // Handle unique constraint errors specially
+        logger.warn('Unique constraint error during sync, continuing anyway: ' + syncError.message);
+      } else {
+        // For other errors, re-throw
+        throw syncError;
+      }
+    }
+    
+    // Set up optional scheduled backups - but disable if we had backup issues
     if (dbConfig.backups && dbConfig.backups.enabled) {
+      // Use file copy method instead of SQL-based backup
+      dbConfig.backups.useFileCopy = true;
       scheduleBackups();
     }
     
@@ -104,6 +128,12 @@ function scheduleBackups() {
 // Perform actual backup
 function performBackup() {
   try {
+    // Check if the database file exists first
+    if (!fs.existsSync(dbConfig.mainDbPath)) {
+      logger.warn('Cannot create backup: Database file does not exist yet');
+      return;
+    }
+    
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const backupFile = path.join(dbConfig.backups.path, `database_${timestamp}.sqlite`);
     

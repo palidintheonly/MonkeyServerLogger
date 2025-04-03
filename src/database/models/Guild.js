@@ -9,38 +9,70 @@ module.exports = (sequelize) => {
   class Guild extends Model {
     /**
      * Find or create a guild entry
-     * @param {string} guildId - The guild ID
-     * @param {string} guildName - The guild name
+     * @param {object|string} options - Either options object with where/defaults or guildId string
+     * @param {string} [guildName] - The guild name (when using old method signature)
      * @returns {Promise<Array>} - [guild, created]
      */
-    static async findOrCreate(guildId, guildName) {
+    static async findOrCreate(options, guildName) {
       try {
+        let queryOptions;
+        let guildId;
+        
+        // Support both formats for backward compatibility:
+        // 1. findOrCreate(guildId, guildName) - old format
+        // 2. findOrCreate({where, defaults}) - new format
+        if (typeof options === 'string') {
+          // Old style: convert to new format
+          guildId = options;
+          queryOptions = {
+            where: { guildId },
+            defaults: {
+              guildId,
+              // Store guild name in settings JSON
+              settings: JSON.stringify({
+                guildName,
+                disabledCommands: [],
+                modmail: {
+                  enabled: false
+                }
+              }),
+              // Required fields from the schema
+              enabledCategories: '[]',
+              setupCompleted: false,
+              modmailEnabled: false
+            }
+          };
+        } else {
+          // New style: already in correct format
+          queryOptions = options;
+          guildId = options.where?.guildId || 'unknown';
+        }
+        
+        // Log the query for debugging
+        logger.debug(`Attempting Guild.findOrCreate with ${typeof options === 'string' ? 'legacy' : 'new'} format for ${guildId}`);
+        
         // Use the Sequelize Model.findOrCreate method directly with proper schema
-        // Avoid referencing guildName directly in the query as it's a VIRTUAL field
-        const result = await super.findOrCreate({
-          where: { guildId },
-          defaults: {
-            // Store guild name in settings JSON
-            settings: JSON.stringify({
-              guildName,
-              disabledCommands: [],
-              modmail: {
-                enabled: false
-              }
-            }),
-            // Required fields from the schema
-            enabledCategories: '[]',
-            setupCompleted: false,
-            modmailEnabled: false
-          }
-        });
+        const result = await super.findOrCreate(queryOptions);
+        
+        // If using old format and name changed, update it
+        if (typeof options === 'string' && guildName && result[0].getSetting('guildName') !== guildName) {
+          await result[0].updateSetting('guildName', guildName);
+        }
+        
+        // Store guild name in settings JSON (make sure it exists)
+        if (!result[0].getSetting('guildName') && queryOptions.defaults && queryOptions.defaults.guildId) {
+          const name = typeof options === 'string' ? guildName : 
+            (queryOptions.defaults.guildName || `Guild ${queryOptions.defaults.guildId}`);
+          await result[0].updateSetting('guildName', name);
+        }
         
         // Log success for debugging
         logger.debug(`Guild findOrCreate successful for ${guildId}`);
         
         return result;
       } catch (error) {
-        logger.error(`Error finding/creating guild ${guildId}: ${error.message}`);
+        logger.error(`Error finding/creating guild ${typeof options === 'string' ? options : 
+          (options.where?.guildId || 'unknown')}: ${error.message}`);
         throw error;
       }
     }

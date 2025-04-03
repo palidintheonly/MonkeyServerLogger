@@ -41,11 +41,33 @@ async function initialize() {
       allowedMentions: { parse: ['users', 'roles'], repliedUser: true }
     });
     
-    // Connect to database
-    const { models } = await connectToDatabase();
+    // Connect to database with retry mechanism
+    let dbConnection;
+    let retryCount = 0;
+    const maxRetries = 3;
+    
+    while (retryCount < maxRetries) {
+      try {
+        dbConnection = await connectToDatabase();
+        logger.info(`Database connection successful after ${retryCount > 0 ? retryCount + ' retries' : 'first attempt'}`);
+        break;
+      } catch (dbError) {
+        retryCount++;
+        logger.error(`Database connection failed (attempt ${retryCount}/${maxRetries}): ${dbError.message}`);
+        
+        if (retryCount >= maxRetries) {
+          throw new Error(`Failed to connect to database after ${maxRetries} attempts: ${dbError.message}`);
+        }
+        
+        // Wait before retrying (exponential backoff)
+        const waitTime = 1000 * Math.pow(2, retryCount);
+        logger.info(`Waiting ${waitTime}ms before retrying...`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+      }
+    }
     
     // Make database models available on the client
-    client.db = models;
+    client.db = dbConnection.models;
     
     // Set up collections for command and cooldown tracking
     client.commands = new Collection();
