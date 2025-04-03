@@ -246,10 +246,16 @@ async function handleModmailGuildSelect(interaction, client) {
       });
     }
     
-    // Check for existing thread
-    const existingThread = await client.db.ModmailThread.findActiveThread(interaction.user.id, selectedGuildId);
+    // Check for existing thread with this guild
+    const existingThreads = await client.db.ModmailThread.findAll({
+      where: {
+        userId: interaction.user.id,
+        guildId: selectedGuildId,
+        open: true
+      }
+    });
     
-    if (existingThread) {
+    if (existingThreads.length > 0) {
       return interaction.editReply({
         content: `You already have an active modmail thread with **${guild.name}**. Please continue the conversation there.`,
         components: []
@@ -310,8 +316,17 @@ async function handleModmailThreadSelect(interaction, client) {
       });
     }
     
-    // Check for existing thread
-    const existingThread = await client.db.ModmailThread.findActiveThread(interaction.user.id, selectedGuildId);
+    // Check for existing thread with this guild
+    const existingThreads = await client.db.ModmailThread.findAll({
+      where: {
+        userId: interaction.user.id,
+        guildId: selectedGuildId,
+        open: true
+      }
+    });
+    
+    // Use the first active thread if there are any
+    const existingThread = existingThreads.length > 0 ? existingThreads[0] : null;
     
     if (!existingThread) {
       // Create a new thread if one doesn't exist
