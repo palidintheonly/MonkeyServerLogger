@@ -49,26 +49,9 @@ module.exports = (sequelize) => {
       comment: 'Which auto-close warnings have been sent'
     }
   }, {
-    timestamps: true,
-    indexes: [
-      {
-        fields: ['userId'],
-        name: 'userId_index'
-      },
-      {
-        fields: ['guildId'],
-        name: 'guildId_index'
-      },
-      {
-        fields: ['channelId'],
-        name: 'channelId_index',
-        unique: true
-      },
-      {
-        fields: ['status'],
-        name: 'status_index'
-      }
-    ]
+    timestamps: true
+    // Removed indexes to prevent duplicate index creation errors
+    // Indexes will be maintained from previous database schema
   });
 
   // Virtual field to parse JSON warningsSent
