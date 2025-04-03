@@ -462,6 +462,9 @@ module.exports = (sequelize) => {
     paranoid: false // No deletedAt column in schema
   });
   
+  // Attach deepMerge to the Guild model for testing
+  Guild.deepMerge = deepMerge;
+  
   return Guild;
 };
 

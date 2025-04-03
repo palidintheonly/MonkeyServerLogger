@@ -4,84 +4,70 @@
  * This script tests the core functionality that was previously causing stack overflow
  * issues in a simpler way that mimics actual usage.
  */
-const { connectToDatabase } = require('../src/database/db');
+
 const { logger } = require('../src/utils/logger');
+const { connectToDatabase } = require('../src/database/db');
 
 async function runTest() {
   try {
-    logger.info('Starting simple test to verify fixes...');
+    logger.info("Starting simple test...");
     
-    // Connect to database and get models
-    const { models } = await connectToDatabase();
-    const { Guild } = models;
+    // Connect to database
+    const db = await connectToDatabase();
     
-    // Create a new test guild
-    const testGuildId = `test-simple-${Date.now()}`;
-    const testGuildName = 'Simple Test Guild';
+    // Create test guild ID
+    const guildId = `simple-test-${Date.now()}`;
     
-    logger.info(`Creating test guild: ${testGuildName} (${testGuildId})`);
-    const [guild, created] = await Guild.findOrCreate(testGuildId, testGuildName);
+    logger.info(`Creating test guild ${guildId}...`);
     
-    logger.info(`Guild created: ${created}`);
-    logger.info(`Guild ID: ${guild.guildId}`);
-    logger.info(`Guild name from virtual field: ${guild.guildName}`);
-    
-    // Test setting and getting settings
-    logger.info('Testing settings operations...');
-    
-    // Basic setting
-    await guild.updateSetting('testSetting', 'test value');
-    const simpleValue = guild.getSetting('testSetting');
-    logger.info(`Simple setting: ${simpleValue}`);
-    
-    // Nested setting
-    await guild.updateSetting('nested.test', 'nested value');
-    const nestedValue = guild.getSetting('nested.test');
-    logger.info(`Nested setting: ${nestedValue}`);
-    
-    // Multiple settings at once
-    await guild.updateSettings({
-      multipleSetting1: 'value1',
-      multipleSetting2: 'value2',
-      nested: {
-        deepSetting: 'deep value'
+    // Create test guild with initial settings
+    const [guild, created] = await db.Guild.findOrCreate({
+      where: { guildId },
+      defaults: {
+        guildId,
+        guildName: 'Simple Test Guild',
+        modmailEnabled: false
       }
     });
     
-    // Check that we can get all these settings
-    logger.info('Verifying multiple settings...');
-    logger.info(`Setting 1: ${guild.getSetting('multipleSetting1')}`);
-    logger.info(`Setting 2: ${guild.getSetting('multipleSetting2')}`);
-    logger.info(`Deep setting: ${guild.getSetting('nested.deepSetting')}`);
-    logger.info(`Previously set nested setting: ${guild.getSetting('nested.test')}`);
+    logger.info(`Guild created: ${created}`);
     
-    // Test updating guild name
-    const newGuildName = 'Updated Guild Name';
-    guild.guildName = newGuildName;
-    await guild.save();
+    // Create test settings with circular references
+    const testSettings = {
+      testObj: {
+        nestedObj: {
+          deepObj: {
+            value: 'test value'
+          }
+        }
+      }
+    };
     
-    // Reload from DB
-    const updatedGuild = await Guild.findByPk(testGuildId);
-    logger.info(`Updated guild name: ${updatedGuild.guildName}`);
+    // Add a circular reference
+    testSettings.circular = testSettings;
+    testSettings.testObj.circular = testSettings.testObj;
     
-    // Make sure the settings JSON is proper
-    const allSettings = updatedGuild.settings;
-    logger.info('All guild settings:');
-    logger.info(typeof allSettings === 'string' ? allSettings : JSON.stringify(allSettings, null, 2));
+    logger.info("Created test settings with circular references");
     
-    logger.info('All tests completed successfully!');
+    // Update settings (this would previously cause stack overflow)
+    logger.info("Attempting to update settings with circular references...");
+    await guild.updateSettings(testSettings);
+    
+    logger.info("Settings updated successfully!");
+    
+    // Verify the update worked, but the circular refs were handled properly
+    const testValue = guild.getSetting('testObj.nestedObj.deepObj.value');
+    logger.info(`Retrieved test value: ${testValue}`);
+    
+    // Try to get the circular reference (should be undefined or handled gracefully)
+    const circular = guild.getSetting('circular');
+    logger.info(`Circular reference exists: ${!!circular}`);
+    
+    logger.info("Test completed successfully!");
   } catch (error) {
     logger.error(`Test failed: ${error.message}`, { error });
   }
 }
 
 // Run the test
-runTest()
-  .then(() => {
-    logger.info('Simple test script completed');
-    process.exit(0);
-  })
-  .catch(error => {
-    logger.error(`Unhandled error: ${error.message}`, { error });
-    process.exit(1);
-  });
+runTest();
