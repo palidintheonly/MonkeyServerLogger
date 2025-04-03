@@ -127,13 +127,23 @@ async function createModmailThread(message, client, guild, content = null, attac
   
   // Create a new channel for the thread
   const user = message.author;
-  const channelName = `${user.username}-${user.discriminator === '0' ? user.id.substring(0, 6) : user.discriminator}`;
+  
+  // Generate a unique timestamp code (last 6 digits of current timestamp)
+  const timestampCode = Date.now().toString().slice(-6);
+  
+  // Create a unique channel name with username, shorter user ID, and timestamp
+  // This ensures uniqueness even if the same user creates multiple threads
+  const userIdSegment = user.id.substring(0, 8); // Use first 8 chars of user ID
+  const channelName = `mm-${user.username}-${userIdSegment}-${timestampCode}`;
+  
+  // Ensure the channel name is within Discord's limits (max 100 chars)
+  const trimmedChannelName = channelName.slice(0, 90);
   
   const channel = await guild.channels.create({
-    name: channelName,
+    name: trimmedChannelName,
     type: ChannelType.GuildText,
     parent: categoryId,
-    topic: `Modmail thread with ${user.tag} (${user.id})`
+    topic: `Modmail thread with ${user.tag} (${user.id}) | Created: ${new Date().toISOString()}`
   });
   
   // Create the thread in the database

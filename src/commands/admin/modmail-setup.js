@@ -252,14 +252,29 @@ module.exports = {
   },
   
   async handleStatus(interaction, client, guildSettings) {
+    // Check both JSON settings and dedicated column
     const modmailSettings = guildSettings.getSetting('modmail') || {};
-    const enabled = modmailSettings.enabled || false;
+    const jsonEnabled = modmailSettings.enabled === true;
+    const columnEnabled = guildSettings.modmailEnabled === true;
     
-    if (!enabled) {
+    // Log the values for debugging
+    console.log(`Guild ${interaction.guild.name} (${interaction.guild.id}) modmail enabled - JSON: ${jsonEnabled}, Column: ${columnEnabled}`);
+    
+    // If either source shows that modmail is disabled, treat it as disabled
+    if (!jsonEnabled || !columnEnabled) {
+      // Show a detailed message about the inconsistency if there is one
+      let disabledMessage = 'The modmail system is currently **disabled** for this server.\n\n' +
+                           'Use `/modmail-setup enable` to set it up.';
+      
+      // If the settings are inconsistent, add a note about it
+      if (jsonEnabled !== columnEnabled) {
+        disabledMessage += '\n\n⚠️ **Note:** There appears to be an inconsistency in your modmail settings. ' +
+                          'Running the `/modmail-setup enable` command again will fix this issue.';
+      }
+      
       return interaction.editReply({
         embeds: [createInfoEmbed(
-          'The modmail system is currently **disabled** for this server.\n\n' +
-          'Use `/modmail-setup enable` to set it up.',
+          disabledMessage,
           'Modmail Status'
         )]
       });

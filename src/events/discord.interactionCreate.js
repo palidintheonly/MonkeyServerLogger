@@ -253,17 +253,21 @@ async function handleModmailGuildSelect(interaction, client) {
       }
     });
     
-    // Get modmail settings and explicitly check if enabled is true
+    // Get modmail settings from both sources (JSON and dedicated column)
     const modmailSettings = guildSettings && guildSettings.getSetting('modmail') || {};
-    const modmailEnabled = modmailSettings.enabled === true;
+    const jsonModmailEnabled = modmailSettings.enabled === true;
+    const columnModmailEnabled = guildSettings.modmailEnabled === true;
+    
+    // Modmail is enabled if BOTH the JSON setting and the database column are true
+    const modmailEnabled = jsonModmailEnabled && columnModmailEnabled;
     
     // Add debug logging
     logger.debug(`Guild ${guild.name} (${selectedGuildId}) modmail settings: ${JSON.stringify(modmailSettings)}`);
-    logger.debug(`Guild ${guild.name} (${selectedGuildId}) modmail enabled: ${modmailEnabled}`);
+    logger.debug(`Guild ${guild.name} (${selectedGuildId}) modmail enabled - JSON: ${jsonModmailEnabled}, Column: ${columnModmailEnabled}`);
     
     if (!modmailEnabled) {
       return interaction.editReply({
-        content: `Modmail is not enabled in **${guild.name}**. Please contact a server administrator.`,
+        content: `Modmail is not enabled in **${guild.name}**. Please ask a server administrator to enable it with the \`/modmail-setup enable\` command.`,
         components: []
       });
     }

@@ -29,8 +29,17 @@ module.exports = {
           // Check if modmail is enabled in this guild - use findByPk to avoid schema issues
           const guildSettings = await client.db.Guild.findByPk(guildId);
           
-          // Use proper getSetting method if we found a guild
-          const modmailEnabled = guildSettings && guildSettings.getSetting('modmail.enabled');
+          if (!guildSettings) continue;
+          
+          // Check both JSON settings and dedicated column
+          const jsonModmailEnabled = guildSettings.getSetting('modmail.enabled') === true;
+          const columnModmailEnabled = guildSettings.modmailEnabled === true;
+          
+          // Modmail is enabled if BOTH the JSON setting and the database column are true
+          const modmailEnabled = jsonModmailEnabled && columnModmailEnabled;
+          
+          // Add debug logging
+          console.log(`Guild ${guild.name} (${guildId}) modmail enabled - JSON: ${jsonModmailEnabled}, Column: ${columnModmailEnabled}`);
           
           if (modmailEnabled) {
             availableGuilds.push({
