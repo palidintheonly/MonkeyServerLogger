@@ -28,7 +28,6 @@ task = "packager.installForAll"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "node bot.js"
-waitForPort = 3000
 
 [deployment]
 run = ["sh", "-c", "node bot.js"]
