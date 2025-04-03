@@ -20,72 +20,98 @@ const { v4: uuidv4 } = require('uuid');
 async function findThreadWithFallback(client, threadId, userId = null, guildId = null) {
   logger.debug(`Looking for thread with ID ${threadId}`);
   
-  // Primary lookup by ID
-  let thread = await client.db.ModmailThread.findOne({
-    where: { id: threadId }
-  });
-  
-  if (thread) {
-    logger.debug(`Found thread directly: ${thread.id}`);
-    return thread;
-  }
-  
-  // If we have a user ID and guild ID, try to find active threads for that combination
-  if (userId && guildId) {
-    logger.debug(`Thread not found by ID, trying userId=${userId} and guildId=${guildId}`);
-    
-    thread = await client.db.ModmailThread.findOne({
-      where: {
-        userId: userId,
-        guildId: guildId,
-        open: true
-      }
+  try {
+    // Primary lookup by ID
+    let thread = await client.db.ModmailThread.findOne({
+      where: { id: threadId }
     });
     
     if (thread) {
-      logger.debug(`Found thread by user/guild combo: ${thread.id}`);
+      logger.debug(`Found thread directly: ${thread.id}`);
       return thread;
     }
-  }
-  
-  // If we have a userId, try finding any active thread for that user
-  if (userId) {
-    logger.debug(`Thread not found by ID or combo, trying any active thread for userId=${userId}`);
     
-    const threads = await client.db.ModmailThread.findAll({
-      where: {
-        userId: userId,
-        open: true
-      },
-      order: [['lastMessageAt', 'DESC']] // Get most recent first
-    });
-    
-    if (threads.length > 0) {
-      logger.debug(`Found ${threads.length} threads for user, using most recent: ${threads[0].id}`);
-      return threads[0];
+    // If we have a user ID and guild ID, try to find active threads for that combination
+    if (userId && guildId) {
+      logger.debug(`Thread not found by ID, trying userId=${userId} and guildId=${guildId}`);
+      
+      thread = await client.db.ModmailThread.findOne({
+        where: {
+          userId: userId,
+          guildId: guildId,
+          open: true
+        },
+        order: [['lastMessageAt', 'DESC']] // Get most recent first
+      });
+      
+      if (thread) {
+        logger.debug(`Found thread by user/guild combo: ${thread.id}`);
+        return thread;
+      }
     }
-  }
-  
-  // If we have a guildId, try finding any active thread for that guild
-  if (guildId) {
-    logger.debug(`No threads found for user, trying any active thread for guildId=${guildId}`);
     
-    const threads = await client.db.ModmailThread.findAll({
-      where: {
-        guildId: guildId,
-        open: true
-      },
-      order: [['lastMessageAt', 'DESC']] // Get most recent first
-    });
-    
-    if (threads.length > 0) {
-      logger.debug(`Found ${threads.length} threads for guild, using most recent: ${threads[0].id}`);
-      return threads[0];
+    // If we have a userId, try finding any active thread for that user
+    if (userId) {
+      logger.debug(`Thread not found by ID or combo, trying any active thread for userId=${userId}`);
+      
+      const threads = await client.db.ModmailThread.findAll({
+        where: {
+          userId: userId,
+          open: true
+        },
+        order: [['lastMessageAt', 'DESC']] // Get most recent first
+      });
+      
+      if (threads.length > 0) {
+        logger.debug(`Found ${threads.length} threads for user, using most recent: ${threads[0].id}`);
+        // Log full thread data for debugging
+        logger.debug(`Thread data: ${JSON.stringify(threads[0].toJSON())}`);
+        return threads[0];
+      }
     }
+    
+    // If we have a guildId, try finding any active thread for that guild
+    if (guildId) {
+      logger.debug(`No threads found for user, trying any active thread for guildId=${guildId}`);
+      
+      const threads = await client.db.ModmailThread.findAll({
+        where: {
+          guildId: guildId,
+          open: true
+        },
+        order: [['lastMessageAt', 'DESC']] // Get most recent first
+      });
+      
+      if (threads.length > 0) {
+        logger.debug(`Found ${threads.length} threads for guild, using most recent: ${threads[0].id}`);
+        return threads[0];
+      }
+    }
+    
+    // If no threadId was provided but we have userId, try to find any thread regardless of open status
+    // This helps with continuity when a thread was closed but user replies anyway
+    if (!threadId && userId) {
+      logger.debug(`No open threads found, checking for any thread (including closed) for userId=${userId}`);
+      
+      const threads = await client.db.ModmailThread.findAll({
+        where: {
+          userId: userId
+        },
+        order: [['lastMessageAt', 'DESC']] // Get most recent first
+      });
+      
+      if (threads.length > 0) {
+        logger.debug(`Found ${threads.length} threads (including closed) for user, using most recent: ${threads[0].id}`);
+        return threads[0];
+      }
+    }
+    
+    logger.debug(`No thread found with any method`);
+    return null;
+  } catch (error) {
+    logger.error(`Error in findThreadWithFallback: ${error.message}`, { error });
+    return null;
   }
-  
-  logger.debug(`No thread found with any method`);
-  return null;
 }
 
 /**

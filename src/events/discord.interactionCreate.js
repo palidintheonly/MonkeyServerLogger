@@ -789,14 +789,12 @@ async function handleModmailReplySubmit(interaction, client) {
         timestamp: new Date().toISOString()
       };
       
-      // Send a message encouraging continued conversation
-      const continueMsg = {
-        content: `💬 **You can reply directly to this message to continue the conversation with ${interaction.guild.name}.**`,
-      };
-      
-      // Send the reply embed first, then the info message
-      await user.send({ embeds: [replyEmbed] });
-      await user.send(continueMsg);
+      // Send the reply embed and the continuation message in a single message
+      // This ensures replies will be properly associated with the thread
+      await user.send({ 
+        embeds: [replyEmbed],
+        content: `💬 **You can reply directly to this message to continue the conversation with ${interaction.guild.name}.**`
+      });
       
       // Echo the reply in the thread
       const echoEmbed = {
