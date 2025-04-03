@@ -1,390 +1,170 @@
 /**
- * Discord Bot - Main Entry Point
- * A professional Discord bot for server management
- * Using both discord.js and oceanic.js for enhanced features
+ * Discord Modmail Bot - Main Entry Point
+ * A dedicated Discord modmail bot for cross-server communication
  */
 require('dotenv').config();
+const { Client, Collection, GatewayIntentBits, Partials } = require('discord.js');
+const { connectToDatabase } = require('./database/db');
+const { client: clientConfig, bot: botConfig } = require('./config');
 const { logger } = require('./utils/logger');
-const { Client, Collection, GatewayIntentBits, Partials, Events } = require('discord.js');
-const { Client: OceanicClient, ClientOptions, Constants } = require('oceanic.js');
 const fs = require('fs');
 const path = require('path');
-const { bot, commands: commandConfig } = require('./config');
-const { connectToDatabase } = require('./database/db');
 
-// Set up Discord.js client with appropriate intents
-const discordClient = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.GuildMessageReactions,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.DirectMessages,
-    GatewayIntentBits.DirectMessageReactions
-  ],
-  partials: [
-    Partials.User,
-    Partials.Channel,
-    Partials.GuildMember,
-    Partials.Message,
-    Partials.Reaction
-  ],
-  allowedMentions: {
-    parse: ['users', 'roles'],
-    repliedUser: true
-  }
-});
+// Check if bot token is available
+if (!process.env.DISCORD_BOT_TOKEN) {
+  logger.error('Missing DISCORD_BOT_TOKEN environment variable');
+  process.exit(1);
+}
 
-// Set up Oceanic.js client with similar intents
-const oceanicClient = new OceanicClient({
-  auth: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-  gateway: {
-    intents: [
-      Constants.Intents.GUILDS,
-      Constants.Intents.GUILD_MEMBERS,
-      Constants.Intents.GUILD_MESSAGES,
-      Constants.Intents.GUILD_MESSAGE_REACTIONS,
-      Constants.Intents.MESSAGE_CONTENT,
-      Constants.Intents.DIRECT_MESSAGES,
-      Constants.Intents.DIRECT_MESSAGE_REACTIONS
-    ]
-  },
-  allowedMentions: {
-    roles: true,
-    users: true,
-    repliedUser: true
-  }
-});
-
-// Store commands and cooldowns in collections
-discordClient.commands = new Collection();
-discordClient.cooldowns = new Collection();
-
-// Initialize main function
+// Initialize function that sets up the bot
 async function initialize() {
   try {
-    logger.info('Bot is starting up...');
+    // Create discord.js client instance
+    const client = new Client({
+      intents: Object.values(GatewayIntentBits)
+        .filter(intent => clientConfig.intents.includes(
+          Object.keys(GatewayIntentBits)[Object.values(GatewayIntentBits).indexOf(intent)]
+        )),
+      partials: [
+        Partials.Channel,
+        Partials.Message,
+        Partials.User,
+        Partials.GuildMember,
+        Partials.Reaction
+      ],
+      allowedMentions: { parse: ['users', 'roles'], repliedUser: true }
+    });
     
     // Connect to database
-    logger.info('Connecting to database...');
-    const db = await connectToDatabase();
-    discordClient.db = db;
-    oceanicClient.db = db;
+    const { models } = await connectToDatabase();
     
-    // Load database models
-    loadDatabaseModels();
+    // Make database models available on the client
+    client.db = models;
     
-    // Load Discord.js commands
-    await loadDiscordCommands();
+    // Set up collections for command and cooldown tracking
+    client.commands = new Collection();
+    client.cooldowns = new Collection();
     
-    // Load event handlers
-    loadEvents();
+    // Load commands
+    await loadDiscordCommands(client);
     
-    // Create basic event files if they don't exist
-    createBasicEventFiles();
+    // Load events
+    loadEvents(client);
     
-    // Log in to Discord with both clients
-    logger.info('Logging in to Discord...');
+    // Log in client
+    await client.login(process.env.DISCORD_BOT_TOKEN);
     
-    // Login with Discord.js client
-    await discordClient.login(process.env.DISCORD_BOT_TOKEN);
-    
-    // Login with Oceanic.js client
-    await oceanicClient.connect();
-    
-    logger.info('Bot initialization completed successfully!');
+    // Return client in case it needs to be accessed from outside
+    return { client };
   } catch (error) {
-    logger.error(`Error during initialization: ${error.message}`);
-    console.error('Initialization error:', error);
+    logger.error(`Initialization error: ${error.message}`, { error });
     process.exit(1);
   }
 }
 
-function loadDatabaseModels() {
-  try {
-    logger.info('Loading database models...');
-    // Models are loaded automatically in the connectToDatabase function
-    // This function can be used to add additional setup or validation
-  } catch (error) {
-    logger.error(`Error loading database models: ${error.message}`);
-    throw error;
-  }
-}
-
 /**
- * Load and register all commands for discord.js client
+ * Load and register all commands
+ * @param {Client} client - Discord.js client
  */
-async function loadDiscordCommands() {
-  try {
-    logger.info('Loading commands...');
-    
-    // Get commands directory path
-    const commandsPath = path.join(__dirname, 'commands');
-    
-    // Check if commands directory exists
-    if (!fs.existsSync(commandsPath)) {
-      logger.warn('Commands directory does not exist, creating it...');
-      fs.mkdirSync(commandsPath, { recursive: true });
+async function loadDiscordCommands(client) {
+  const commandsPath = path.join(__dirname, 'commands');
+  
+  // Function to recursively load commands from directories
+  const loadCommandsFromDir = (dir) => {
+    if (!fs.existsSync(dir)) {
+      logger.warn(`Commands directory not found: ${dir}`);
+      return;
     }
     
-    // Get all command category folders
-    const commandCategories = fs.readdirSync(commandsPath).filter(
-      file => fs.statSync(path.join(commandsPath, file)).isDirectory()
-    );
+    const items = fs.readdirSync(dir, { withFileTypes: true });
     
-    if (commandCategories.length === 0) {
-      logger.warn('No command categories found');
-    }
-    
-    // Load commands from each category
-    for (const category of commandCategories) {
-      const categoryPath = path.join(commandsPath, category);
+    for (const item of items) {
+      const itemPath = path.join(dir, item.name);
       
-      // Get all command files in the category
-      const commandFiles = fs.readdirSync(categoryPath).filter(file => file.endsWith('.js'));
-      
-      logger.info(`Loading commands from category: ${category}`);
-      
-      for (const file of commandFiles) {
-        const filePath = path.join(categoryPath, file);
-        
-        // Load the command file
-        const command = require(filePath);
-        
-        // Validate command has required properties
-        if ('data' in command && 'execute' in command) {
-          // Add the command to the collection
-          discordClient.commands.set(command.data.name, command);
-          logger.verbose(`Loaded command: ${command.data.name}`);
-        } else {
-          logger.warn(`Command at ${filePath} is missing required "data" or "execute" property`);
+      if (item.isDirectory()) {
+        // Load commands from subdirectory
+        loadCommandsFromDir(itemPath);
+      } else if (item.name.endsWith('.js')) {
+        try {
+          const command = require(itemPath);
+          
+          // Ensure command has required properties
+          if (!command.data || !command.execute) {
+            logger.warn(`Command at ${itemPath} is missing required properties`);
+            continue;
+          }
+          
+          // Add command to collection
+          client.commands.set(command.data.name, command);
+          logger.debug(`Loaded command: ${command.data.name}`);
+        } catch (error) {
+          logger.error(`Error loading command from ${itemPath}: ${error.message}`);
         }
       }
     }
-    
-    logger.info(`Loaded ${discordClient.commands.size} commands successfully`);
-  } catch (error) {
-    logger.error(`Error loading commands: ${error.message}`);
-    throw error;
-  }
+  };
+  
+  // Load all commands
+  loadCommandsFromDir(commandsPath);
+  logger.info(`Loaded ${client.commands.size} commands`);
 }
 
 /**
  * Load and register all event handlers
+ * @param {Client} client - Discord.js client
  */
-function loadEvents() {
-  try {
-    logger.info('Loading event handlers...');
-    
-    // Get events directory path
-    const eventsPath = path.join(__dirname, 'events');
-    
-    // Create events directory if it doesn't exist
-    if (!fs.existsSync(eventsPath)) {
-      logger.warn('Events directory does not exist, creating it...');
-      fs.mkdirSync(eventsPath, { recursive: true });
-      
-      // Create subdirectories for each client
-      fs.mkdirSync(path.join(eventsPath, 'discord'), { recursive: true });
-      fs.mkdirSync(path.join(eventsPath, 'oceanic'), { recursive: true });
-    }
-    
-    // Load Discord.js events directly in the root of events directory
-    const discordEventFiles = fs.readdirSync(eventsPath).filter(
-      file => file.startsWith('discord.') && file.endsWith('.js')
-    );
-    
-    for (const file of discordEventFiles) {
+function loadEvents(client) {
+  // Discord.js events
+  const eventsPath = path.join(__dirname, 'events');
+  const eventFiles = fs.readdirSync(eventsPath)
+    .filter(file => file.startsWith('discord.') && file.endsWith('.js'));
+  
+  for (const file of eventFiles) {
+    try {
       const filePath = path.join(eventsPath, file);
       const event = require(filePath);
       
       if (event.once) {
-        discordClient.once(event.name, (...args) => event.execute(...args, discordClient));
+        client.once(event.name, (...args) => event.execute(...args, client));
       } else {
-        discordClient.on(event.name, (...args) => event.execute(...args, discordClient));
+        client.on(event.name, (...args) => event.execute(...args, client));
       }
       
-      logger.verbose(`Loaded Discord.js event: ${event.name}`);
-    }
-    
-    // Load Discord.js events from discord/ subdirectory
-    const discordEventsDir = path.join(eventsPath, 'discord');
-    if (fs.existsSync(discordEventsDir)) {
-      const discordDirEventFiles = fs.readdirSync(discordEventsDir).filter(file => file.endsWith('.js'));
-      
-      for (const file of discordDirEventFiles) {
-        const filePath = path.join(discordEventsDir, file);
-        const event = require(filePath);
-        
-        if (event.once) {
-          discordClient.once(event.name, (...args) => event.execute(...args, discordClient));
-        } else {
-          discordClient.on(event.name, (...args) => event.execute(...args, discordClient));
-        }
-        
-        logger.verbose(`Loaded Discord.js event from directory: ${event.name}`);
-      }
-    }
-    
-    // Load Oceanic.js events from oceanic/ subdirectory
-    const oceanicEventsDir = path.join(eventsPath, 'oceanic');
-    if (fs.existsSync(oceanicEventsDir)) {
-      const oceanicEventFiles = fs.readdirSync(oceanicEventsDir).filter(file => file.endsWith('.js'));
-      
-      for (const file of oceanicEventFiles) {
-        const filePath = path.join(oceanicEventsDir, file);
-        const event = require(filePath);
-        
-        oceanicClient.on(event.name, (...args) => event.execute(...args, oceanicClient));
-        logger.verbose(`Loaded Oceanic.js event: ${event.name}`);
-      }
-    }
-    
-    // Create default discord.js event listeners if we don't have any basic ready event
-    if (discordEventFiles.length === 0 && !fs.existsSync(path.join(eventsPath, 'discord', 'ready.js'))) {
-      createBasicEventFiles();
-    }
-    
-    logger.info('Event handlers loaded successfully');
-  } catch (error) {
-    logger.error(`Error loading events: ${error.message}`);
-    throw error;
-  }
-}
-
-/**
- * Creates basic event files if they don't exist yet
- */
-function createBasicEventFiles() {
-  const eventsPath = path.join(__dirname, 'events');
-  
-  // Create basic discord.js ready event if it doesn't exist
-  const readyEventPath = path.join(eventsPath, 'discord.ready.js');
-  if (!fs.existsSync(readyEventPath)) {
-    const readyEvent = `/**
- * Discord.js Ready Event
- */
-const { logger } = require('../utils/logger');
-
-module.exports = {
-  name: 'ready',
-  once: true,
-  execute(client) {
-    logger.info(\`Discord.js client ready! Logged in as \${client.user.tag}\`);
-  }
-};`;
-    
-    fs.writeFileSync(readyEventPath, readyEvent);
-    logger.info('Created basic Discord.js ready event');
-  }
-  
-  // Create basic discord.js interactionCreate event if it doesn't exist
-  const interactionEventPath = path.join(eventsPath, 'discord.interactionCreate.js');
-  if (!fs.existsSync(interactionEventPath)) {
-    const interactionEvent = `/**
- * Discord.js Interaction Event
- */
-const { Events, Collection } = require('discord.js');
-const { logger } = require('../utils/logger');
-const { commands } = require('../config');
-
-module.exports = {
-  name: Events.InteractionCreate,
-  async execute(interaction, client) {
-    // Only process command interactions
-    if (!interaction.isChatInputCommand()) return;
-    
-    const command = client.commands.get(interaction.commandName);
-    
-    // If command doesn't exist
-    if (!command) {
-      logger.warn(\`User \${interaction.user.tag} tried to use unknown command: \${interaction.commandName}\`);
-      return;
-    }
-    
-    // Handle cooldowns
-    const { cooldowns } = client;
-    
-    if (!cooldowns.has(command.data.name)) {
-      cooldowns.set(command.data.name, new Collection());
-    }
-    
-    const now = Date.now();
-    const timestamps = cooldowns.get(command.data.name);
-    const cooldownAmount = (command.cooldown ?? commands.cooldownDefault) * 1000;
-    
-    if (timestamps.has(interaction.user.id)) {
-      const expirationTime = timestamps.get(interaction.user.id) + cooldownAmount;
-      
-      if (now < expirationTime) {
-        const timeLeft = (expirationTime - now) / 1000;
-        
-        logger.debug(\`User \${interaction.user.tag} tried to use \${command.data.name} while on cooldown\`);
-        
-        return interaction.reply({
-          content: \`Please wait \${timeLeft.toFixed(1)} more second\${timeLeft === 1 ? '' : 's'} before using the \\\`\${command.data.name}\\\` command again.\`,
-          ephemeral: true
-        });
-      }
-    }
-    
-    timestamps.set(interaction.user.id, now);
-    setTimeout(() => timestamps.delete(interaction.user.id), cooldownAmount);
-    
-    try {
-      logger.debug(\`User \${interaction.user.tag} used command: \${interaction.commandName}\`);
-      await command.execute(interaction, client);
+      logger.debug(`Loaded Discord.js event: ${event.name}`);
     } catch (error) {
-      logger.error(\`Error executing command \${interaction.commandName}: \${error.message}\`, { error });
-      
-      if (interaction.replied || interaction.deferred) {
-        await interaction.followUp({ 
-          content: 'There was an error while executing this command!', 
-          ephemeral: true 
-        });
-      } else {
-        await interaction.reply({ 
-          content: 'There was an error while executing this command!', 
-          ephemeral: true 
-        });
-      }
+      logger.error(`Error loading Discord.js event from ${file}: ${error.message}`);
     }
-  }
-};`;
-    
-    fs.writeFileSync(interactionEventPath, interactionEvent);
-    logger.info('Created basic Discord.js interaction event');
-  }
-  
-  // Create basic Oceanic.js ready event if it doesn't exist
-  const oceanicReadyDir = path.join(eventsPath, 'oceanic');
-  if (!fs.existsSync(oceanicReadyDir)) {
-    fs.mkdirSync(oceanicReadyDir, { recursive: true });
-  }
-  
-  const oceanicReadyPath = path.join(oceanicReadyDir, 'ready.js');
-  if (!fs.existsSync(oceanicReadyPath)) {
-    const oceanicReady = `/**
- * Oceanic.js Ready Event
- */
-const { logger } = require('../../utils/logger');
-
-module.exports = {
-  name: 'ready',
-  execute(client) {
-    logger.info(\`Oceanic.js client ready! Logged in as \${client.user.tag}\`);
-  }
-};`;
-    
-    fs.writeFileSync(oceanicReadyPath, oceanicReady);
-    logger.info('Created basic Oceanic.js ready event');
   }
 }
 
-// Start the bot
+// Begin initialization
 initialize().catch(error => {
-  logger.error(`Fatal error during bot startup: ${error.message}`);
-  console.error('Fatal error during bot startup:', error);
+  logger.error(`Unhandled initialization error: ${error.message}`, { error });
   process.exit(1);
+});
+
+// Handle process termination gracefully
+process.on('SIGINT', () => {
+  logger.info('Received SIGINT, shutting down gracefully');
+  process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+  logger.info('Received SIGTERM, shutting down gracefully');
+  process.exit(0);
+});
+
+// Handle unhandled errors
+process.on('uncaughtException', (error) => {
+  logger.error(`Uncaught exception: ${error.message}`, { error });
+  
+  // In production, we might want to restart the bot after an uncaught exception
+  if (process.env.NODE_ENV === 'production') {
+    logger.info('Attempting to restart due to uncaught exception');
+    process.exit(1); // Exit with error code, let process manager restart
+  }
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error(`Unhandled promise rejection at: ${promise}, reason: ${reason}`);
 });

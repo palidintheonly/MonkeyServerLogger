@@ -1,57 +1,90 @@
 /**
- * Discord Bot - Production Entry Point
+ * Discord Modmail Bot - Production Entry Point
  * 
  * This is the production entry point that loads the main bot file.
  * It contains basic error handling and restart logic for production use.
  */
-require('dotenv').config();
-const { logger } = require('./src/utils/logger');
+const fs = require('fs');
+const path = require('path');
 
-// Set up global error handlers
-process.on('uncaughtException', (error) => {
-  logger.error(`Uncaught Exception: ${error.message}`, { error });
-  console.error('Uncaught Exception:', error);
-  
-  // Shutdown gracefully rather than risk an inconsistent state
-  process.exit(1);
-});
+// Create logs directory if it doesn't exist
+const logsDir = path.join(process.cwd(), 'logs');
+if (!fs.existsSync(logsDir)) {
+  fs.mkdirSync(logsDir, { recursive: true });
+}
 
-process.on('unhandledRejection', (reason, promise) => {
-  logger.error('Unhandled Rejection at:', { promise, reason });
-  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-  
-  // Keep running but log the error
-});
+// File paths
+const errorLogFile = path.join(logsDir, 'error.log');
 
-// Exit handler
-process.on('SIGINT', () => {
-  logger.info('Received SIGINT. Bot is shutting down.');
-  process.exit(0);
-});
+// Configuration
+const MAX_RESTARTS = 3;
+const RESTART_DELAY = 10000; // 10 seconds
+let restartCount = 0;
+let lastRestartTime = 0;
 
-process.on('SIGTERM', () => {
-  logger.info('Received SIGTERM. Bot is shutting down.');
-  process.exit(0);
-});
-
-// Auto-restart function in case of fatal errors
 function startBot() {
+  console.log('Starting Discord Modmail Bot...');
+  
   try {
-    logger.info('Starting bot...');
-    
-    // Import and run the main bot code
-    require('./src/index');
-    
-    logger.info('Bot started successfully.');
+    // Load the main bot code
+    const bot = require('./src/index.js');
+    console.log('Bot loaded successfully');
   } catch (error) {
-    logger.error(`Failed to start bot: ${error.message}`);
-    console.error('Failed to start bot:', error);
-    
-    // Wait 5 seconds before restarting
-    logger.info('Restarting in 5 seconds...');
-    setTimeout(startBot, 5000);
+    handleError(error);
   }
 }
+
+function handleError(error) {
+  const now = Date.now();
+  const timeSinceLastRestart = now - lastRestartTime;
+  
+  // Log the error
+  console.error(`Bot crashed with error: ${error.message}`);
+  console.error(error.stack);
+  
+  // Also log to file
+  try {
+    fs.appendFileSync(errorLogFile, `\n[${new Date().toISOString()}] Bot crashed with error: ${error.message}\n${error.stack}\n`);
+  } catch (logError) {
+    console.error(`Failed to write to error log: ${logError.message}`);
+  }
+  
+  // Check if we should restart
+  if (restartCount < MAX_RESTARTS) {
+    // Reset restart count if it's been a while since last restart
+    if (timeSinceLastRestart > 60000) { // 1 minute
+      restartCount = 0;
+    }
+    
+    restartCount++;
+    lastRestartTime = now;
+    
+    console.log(`Restarting bot in ${RESTART_DELAY / 1000} seconds... (Attempt ${restartCount}/${MAX_RESTARTS})`);
+    
+    setTimeout(() => {
+      // Clear require cache to reload modules
+      Object.keys(require.cache).forEach(key => {
+        if (key.includes('/src/')) {
+          delete require.cache[key];
+        }
+      });
+      
+      startBot();
+    }, RESTART_DELAY);
+  } else {
+    console.error(`Maximum restart attempts (${MAX_RESTARTS}) reached. Exiting.`);
+    process.exit(1);
+  }
+}
+
+// Handle uncaught exceptions
+process.on('uncaughtException', handleError);
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  handleError(new Error(`Unhandled promise rejection: ${reason}`));
+});
 
 // Start the bot
 startBot();

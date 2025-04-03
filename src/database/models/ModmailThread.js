@@ -2,147 +2,191 @@
  * ModmailThread Model
  * Tracks modmail threads between users and moderators
  */
-const { DataTypes, Op } = require('sequelize');
+const { DataTypes, Model, Op } = require('sequelize');
+const { logger } = require('../../utils/logger');
 
 module.exports = (sequelize) => {
-  const ModmailThread = sequelize.define('ModmailThread', {
-    // Auto-incrementing ID
+  class ModmailThread extends Model {
+    /**
+     * Find all threads for a specific user
+     * @param {string} userId - The user ID
+     * @returns {Promise<Array<ModmailThread>>}
+     */
+    static async findUserThreads(userId) {
+      try {
+        return await ModmailThread.findAll({
+          where: {
+            userId
+          },
+          order: [['createdAt', 'DESC']]
+        });
+      } catch (error) {
+        logger.error(`Error finding threads for user ${userId}: ${error.message}`);
+        throw error;
+      }
+    }
+    
+    /**
+     * Find a user's active thread
+     * @param {string} userId - The user ID 
+     * @param {string} guildId - The guild ID
+     * @returns {Promise<ModmailThread|null>}
+     */
+    static async findActiveThread(userId, guildId) {
+      try {
+        return await ModmailThread.findOne({
+          where: {
+            userId,
+            guildId,
+            open: true
+          }
+        });
+      } catch (error) {
+        logger.error(`Error finding active thread for user ${userId} in guild ${guildId}: ${error.message}`);
+        throw error;
+      }
+    }
+    
+    /**
+     * Find threads that have been inactive for a period
+     * @param {number} hours - Hours since last activity
+     * @returns {Promise<Array<ModmailThread>>}
+     */
+    static async findInactiveThreads(hours) {
+      try {
+        const cutoff = new Date();
+        cutoff.setHours(cutoff.getHours() - hours);
+        
+        return await ModmailThread.findAll({
+          where: {
+            lastMessageAt: {
+              [Op.lt]: cutoff
+            },
+            open: true
+          }
+        });
+      } catch (error) {
+        logger.error(`Error finding inactive threads: ${error.message}`);
+        throw error;
+      }
+    }
+    
+    /**
+     * Update the last activity timestamp
+     */
+    async updateActivity() {
+      try {
+        this.lastMessageAt = new Date();
+        await this.save();
+      } catch (error) {
+        logger.error(`Error updating thread activity for ${this.id}: ${error.message}`);
+        throw error;
+      }
+    }
+    
+    /**
+     * Close a thread
+     * @param {string} userId - The user ID of who closed it
+     * @param {string} reason - The reason for closing
+     */
+    async closeThread(userId, reason) {
+      try {
+        this.open = false;
+        this.closedAt = new Date();
+        this.closedBy = userId;
+        this.closeReason = reason;
+        
+        await this.save();
+        return this;
+      } catch (error) {
+        logger.error(`Error closing thread ${this.id}: ${error.message}`);
+        throw error;
+      }
+    }
+  }
+  
+  ModmailThread.init({
     id: {
-      type: DataTypes.INTEGER,
-      primaryKey: true,
-      autoIncrement: true
-    },
-    
-    // The Discord guild ID
-    guildId: {
       type: DataTypes.STRING,
-      allowNull: false
+      primaryKey: true,
+      comment: 'ID of the channel created for the thread'
     },
-    
-    // The user ID who initiated the thread
     userId: {
       type: DataTypes.STRING,
-      allowNull: false
+      allowNull: false,
+      comment: 'ID of the user who initiated the thread'
     },
-    
-    // The Discord channel ID for the thread
-    channelId: {
+    guildId: {
       type: DataTypes.STRING,
-      allowNull: false
+      allowNull: false,
+      comment: 'ID of the guild where the thread was created'
     },
-    
-    // Status of the thread (OPEN, CLOSED)
-    status: {
-      type: DataTypes.ENUM('OPEN', 'CLOSED'),
-      defaultValue: 'OPEN'
+    open: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: true,
+      comment: 'Whether the thread is currently open'
     },
-    
-    // Optional closing reason
-    closedReason: {
-      type: DataTypes.TEXT,
-      allowNull: true
-    },
-    
-    // User ID of moderator who closed the thread
-    closedBy: {
-      type: DataTypes.STRING,
-      allowNull: true
-    },
-    
-    // When the thread was closed
-    closedAt: {
-      type: DataTypes.DATE,
-      allowNull: true
-    },
-    
-    // When the thread was last active
-    lastMessageAt: {
-      type: DataTypes.DATE,
-      defaultValue: DataTypes.NOW
-    },
-    
-    // Optional thread subject/title
     subject: {
       type: DataTypes.STRING,
-      allowNull: true
+      allowNull: true,
+      comment: 'Subject or topic of the thread'
     },
-    
-    // Optional metadata for thread
+    lastMessageAt: {
+      type: DataTypes.DATE,
+      allowNull: false,
+      defaultValue: DataTypes.NOW,
+      comment: 'Timestamp of the last message in the thread'
+    },
+    messageCount: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 0,
+      comment: 'Count of messages in the thread'
+    },
+    createdBy: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      comment: 'ID of the user or system that created the thread'
+    },
+    closedAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      comment: 'When the thread was closed'
+    },
+    closedBy: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'ID of the user who closed the thread'
+    },
+    closeReason: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      comment: 'Reason for closing the thread'
+    },
     metadata: {
       type: DataTypes.JSON,
-      defaultValue: {}
+      allowNull: true,
+      defaultValue: {},
+      comment: 'Additional metadata about the thread'
     }
+  }, {
+    sequelize,
+    modelName: 'ModmailThread',
+    timestamps: true,
+    paranoid: true,
+    indexes: [
+      {
+        fields: ['userId', 'open']
+      },
+      {
+        fields: ['guildId', 'open']
+      },
+      {
+        fields: ['lastMessageAt']
+      }
+    ]
   });
-  
-  /**
-   * Find all threads for a specific user
-   * @param {string} userId - The user ID
-   * @returns {Promise<Array<ModmailThread>>}
-   */
-  ModmailThread.findUserThreads = function(userId) {
-    return this.findAll({
-      where: { userId },
-      order: [['createdAt', 'DESC']]
-    });
-  };
-  
-  /**
-   * Find a user's active thread
-   * @param {string} userId - The user ID 
-   * @param {string} guildId - The guild ID
-   * @returns {Promise<ModmailThread|null>}
-   */
-  ModmailThread.findActiveThread = function(userId, guildId) {
-    return this.findOne({
-      where: {
-        userId,
-        guildId,
-        status: 'OPEN'
-      }
-    });
-  };
-  
-  /**
-   * Find threads that have been inactive for a period
-   * @param {number} hours - Hours since last activity
-   * @returns {Promise<Array<ModmailThread>>}
-   */
-  ModmailThread.findInactiveThreads = function(hours) {
-    const cutoff = new Date(Date.now() - (hours * 60 * 60 * 1000));
-    
-    return this.findAll({
-      where: {
-        status: 'OPEN',
-        lastMessageAt: {
-          [Op.lt]: cutoff
-        }
-      }
-    });
-  };
-  
-  /**
-   * Update the last activity timestamp
-   */
-  ModmailThread.prototype.updateActivity = async function() {
-    this.lastMessageAt = new Date();
-    await this.save();
-    return this;
-  };
-  
-  /**
-   * Close a thread
-   * @param {string} userId - The user ID of who closed it
-   * @param {string} reason - The reason for closing
-   */
-  ModmailThread.prototype.close = async function(userId, reason = 'Thread closed') {
-    this.status = 'CLOSED';
-    this.closedBy = userId;
-    this.closedReason = reason;
-    this.closedAt = new Date();
-    
-    await this.save();
-    return this;
-  };
   
   return ModmailThread;
 };

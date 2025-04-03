@@ -2,134 +2,222 @@
  * Guild Model
  * Manages guild-specific settings and configurations
  */
-const { DataTypes } = require('sequelize');
+const { DataTypes, Model } = require('sequelize');
+const { logger } = require('../../utils/logger');
 
 module.exports = (sequelize) => {
-  const Guild = sequelize.define('Guild', {
-    // Discord guild ID as the primary key
-    id: {
-      type: DataTypes.STRING,
-      primaryKey: true
-    },
+  class Guild extends Model {
+    /**
+     * Find or create a guild entry
+     * @param {string} guildId - The guild ID
+     * @param {string} guildName - The guild name
+     * @returns {Promise<Array>} - [guild, created]
+     */
+    static async findOrCreate(guildId, guildName) {
+      try {
+        return await Guild.findOrCreate({
+          where: { guildId },
+          defaults: {
+            guildName,
+            joinedAt: new Date(),
+            settings: {
+              disabledCommands: [],
+              modmail: {
+                enabled: false
+              }
+            }
+          }
+        });
+      } catch (error) {
+        logger.error(`Error finding/creating guild ${guildId}: ${error.message}`);
+        throw error;
+      }
+    }
     
-    // Guild name
-    name: {
+    /**
+     * Get a setting value
+     * @param {string} key - The setting key
+     * @returns {any} - The setting value
+     */
+    getSetting(key) {
+      try {
+        const settings = this.settings || {};
+        
+        // If simple key, return directly
+        if (!key.includes('.')) {
+          return settings[key];
+        }
+        
+        // Handle nested keys
+        let result = settings;
+        const parts = key.split('.');
+        
+        for (const part of parts) {
+          if (result === undefined || result === null) return undefined;
+          result = result[part];
+        }
+        
+        return result;
+      } catch (error) {
+        logger.error(`Error getting setting ${key} for guild ${this.guildId}: ${error.message}`);
+        return undefined;
+      }
+    }
+    
+    /**
+     * Update a setting value
+     * @param {string} key - The setting key
+     * @param {any} value - The new value
+     * @returns {Promise<Guild>} - The updated guild
+     */
+    async updateSetting(key, value) {
+      try {
+        const settings = this.settings || {};
+        
+        // If simple key, update directly
+        if (!key.includes('.')) {
+          settings[key] = value;
+        } else {
+          // Handle nested keys
+          let obj = settings;
+          const parts = key.split('.');
+          const lastPart = parts.pop();
+          
+          for (const part of parts) {
+            if (obj[part] === undefined || obj[part] === null) {
+              obj[part] = {};
+            }
+            obj = obj[part];
+          }
+          
+          obj[lastPart] = value;
+        }
+        
+        this.settings = settings;
+        await this.save();
+        
+        return this;
+      } catch (error) {
+        logger.error(`Error updating setting ${key} for guild ${this.guildId}: ${error.message}`);
+        throw error;
+      }
+    }
+    
+    /**
+     * Update multiple settings at once
+     * @param {Object} settings - Object with key/value pairs to update
+     * @returns {Promise<Guild>} - The updated guild
+     */
+    async updateSettings(newSettings) {
+      try {
+        // Deep merge the settings
+        this.settings = deepMerge(this.settings || {}, newSettings);
+        await this.save();
+        
+        return this;
+      } catch (error) {
+        logger.error(`Error updating settings for guild ${this.guildId}: ${error.message}`);
+        throw error;
+      }
+    }
+    
+    /**
+     * Check if a command is disabled in this guild
+     * @param {string} commandName - The command to check
+     * @returns {boolean} - Whether the command is disabled
+     */
+    isCommandDisabled(commandName) {
+      try {
+        const disabledCommands = this.getSetting('disabledCommands') || [];
+        return disabledCommands.includes(commandName);
+      } catch (error) {
+        logger.error(`Error checking disabled command ${commandName} for guild ${this.guildId}: ${error.message}`);
+        return false;
+      }
+    }
+    
+    /**
+     * Enable or disable a command in this guild
+     * @param {string} commandName - The command to toggle
+     * @param {boolean} disabled - Whether to disable the command
+     * @returns {Promise<Guild>} - The updated guild
+     */
+    async toggleCommand(commandName, disabled) {
+      try {
+        let disabledCommands = this.getSetting('disabledCommands') || [];
+        
+        if (disabled && !disabledCommands.includes(commandName)) {
+          // Disable the command
+          disabledCommands.push(commandName);
+        } else if (!disabled && disabledCommands.includes(commandName)) {
+          // Enable the command
+          disabledCommands = disabledCommands.filter(cmd => cmd !== commandName);
+        }
+        
+        await this.updateSetting('disabledCommands', disabledCommands);
+        return this;
+      } catch (error) {
+        logger.error(`Error toggling command ${commandName} for guild ${this.guildId}: ${error.message}`);
+        throw error;
+      }
+    }
+  }
+  
+  Guild.init({
+    guildId: {
+      type: DataTypes.STRING,
+      primaryKey: true,
+      allowNull: false
+    },
+    guildName: {
       type: DataTypes.STRING,
       allowNull: false
     },
-    
-    // Guild-specific settings in JSON format
+    joinedAt: {
+      type: DataTypes.DATE,
+      allowNull: false,
+      defaultValue: DataTypes.NOW
+    },
     settings: {
       type: DataTypes.JSON,
-      defaultValue: {
-        prefix: '!',                    // Default command prefix (legacy)
-        language: 'en',                 // Default language
-        moderationEnabled: true,        // Whether moderation commands are enabled
-        moderationLogChannel: null,     // Channel ID for moderation logs
-        joinLogChannel: null,           // Channel ID for member join logs
-        leaveLogChannel: null,          // Channel ID for member leave logs
-        messageLogChannel: null,        // Channel ID for message logs
-        welcomeChannel: null,           // Channel ID for welcome messages
-        welcomeMessage: 'Welcome to {server}, {user}!', // Default welcome message
-        autoRoles: [],                  // Roles to give to new members
-        disabledCommands: [],           // List of disabled command names
-        verificationLevel: 0,           // 0-4 verification level
-        autoBanEnabled: false,          // Auto ban features
-        autoMuteEnabled: false,         // Auto mute features
-        modmailEnabled: false,          // Whether modmail is enabled
-        modmailCategory: null,          // Category ID for modmail channels
-        modmailLogChannel: null         // Channel ID for modmail logs
-      }
-    },
-    
-    // Whether the guild is premium
-    premium: {
-      type: DataTypes.BOOLEAN,
-      defaultValue: false
-    },
-    
-    // Premium tier (0 = none, 1 = bronze, 2 = silver, 3 = gold)
-    premiumTier: {
-      type: DataTypes.INTEGER,
-      defaultValue: 0
-    },
-    
-    // When premium expires (if applicable)
-    premiumExpiresAt: {
-      type: DataTypes.DATE,
-      allowNull: true
-    },
-    
-    // Statistics about the guild
-    stats: {
-      type: DataTypes.JSON,
-      defaultValue: {
-        memberCount: 0,
-        messageCount: 0,
-        commandCount: 0,
-        lastActive: null
-      }
+      allowNull: false,
+      defaultValue: {}
     }
+  }, {
+    sequelize,
+    modelName: 'Guild',
+    timestamps: true,
+    paranoid: true
   });
-  
-  // Find a guild by ID or create it if it doesn't exist
-  Guild.findOrCreateGuild = async function(id, name) {
-    const [guild, created] = await this.findOrCreate({
-      where: { id },
-      defaults: { name }
-    });
-    
-    return { guild, created };
-  };
-  
-  // Get a specific setting from the guild
-  Guild.prototype.getSetting = function(key) {
-    return this.settings[key];
-  };
-  
-  // Update a specific setting in the guild
-  Guild.prototype.updateSetting = async function(key, value) {
-    const settings = { ...this.settings };
-    settings[key] = value;
-    
-    this.settings = settings;
-    await this.save();
-    
-    return this;
-  };
-  
-  // Update stats for the guild
-  Guild.prototype.updateStats = async function(stats) {
-    this.stats = { ...this.stats, ...stats };
-    await this.save();
-    
-    return this;
-  };
-  
-  // Check if a command is disabled in this guild
-  Guild.prototype.isCommandDisabled = function(commandName) {
-    return this.settings.disabledCommands.includes(commandName);
-  };
-  
-  // Enable or disable a command in this guild
-  Guild.prototype.setCommandEnabled = async function(commandName, enabled) {
-    const disabledCommands = [...this.settings.disabledCommands];
-    
-    if (enabled) {
-      // Enable by removing from disabled list
-      const index = disabledCommands.indexOf(commandName);
-      if (index !== -1) {
-        disabledCommands.splice(index, 1);
-      }
-    } else {
-      // Disable by adding to disabled list if not already there
-      if (!disabledCommands.includes(commandName)) {
-        disabledCommands.push(commandName);
-      }
-    }
-    
-    return this.updateSetting('disabledCommands', disabledCommands);
-  };
   
   return Guild;
 };
+
+/**
+ * Deep merge two objects
+ * @param {Object} target - Target object
+ * @param {Object} source - Source object
+ * @returns {Object} - Merged object
+ */
+function deepMerge(target, source) {
+  // For each property in source
+  for (const key in source) {
+    // If it's an object and not null or an array
+    if (
+      source[key] && 
+      typeof source[key] === 'object' && 
+      !Array.isArray(source[key]) &&
+      target[key] && 
+      typeof target[key] === 'object' && 
+      !Array.isArray(target[key])
+    ) {
+      // Recursively merge the objects
+      deepMerge(target[key], source[key]);
+    } else {
+      // Otherwise just assign the property
+      target[key] = source[key];
+    }
+  }
+  
+  return target;
+}

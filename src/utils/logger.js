@@ -3,6 +3,7 @@
  * Centralized logging system using Winston
  */
 const winston = require('winston');
+const { format, transports } = winston;
 const path = require('path');
 const fs = require('fs');
 
@@ -12,121 +13,116 @@ if (!fs.existsSync(logsDir)) {
   fs.mkdirSync(logsDir, { recursive: true });
 }
 
-// Get log level from environment or use default
-const logLevel = process.env.LOG_LEVEL || 'info';
-
-// Define custom log format
-const logFormat = winston.format.combine(
-  winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
-  winston.format.errors({ stack: true }),
-  winston.format.printf(({ level, message, timestamp, stack }) => {
-    return `[${timestamp}] [${level.toUpperCase()}]: ${message}${stack ? '\n' + stack : ''}`;
+// Custom format for console output
+const consoleFormat = format.combine(
+  format.colorize(),
+  format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+  format.printf(({ timestamp, level, message, ...meta }) => {
+    return `${timestamp} ${level}: ${message} ${Object.keys(meta).length ? JSON.stringify(meta, null, 2) : ''}`;
   })
 );
 
-// Create Winston logger
+// Custom format for file output
+const fileFormat = format.combine(
+  format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+  format.json()
+);
+
+// Main logger for general application logging
 const logger = winston.createLogger({
-  level: logLevel,
-  format: logFormat,
+  level: process.env.LOG_LEVEL || 'info',
+  format: fileFormat,
+  defaultMeta: { service: 'bot' },
   transports: [
-    // Write logs to console
-    new winston.transports.Console({
-      format: winston.format.combine(
-        winston.format.colorize(),
-        logFormat
-      ),
+    // Console transport
+    new transports.Console({
+      format: consoleFormat
     }),
     
-    // Write all logs to a combined log file
-    new winston.transports.File({
+    // Combined log file (info and above)
+    new transports.File({
       filename: path.join(logsDir, 'combined.log'),
-      maxsize: 10 * 1024 * 1024, // 10MB
-      maxFiles: 5,
+      level: 'info'
     }),
     
-    // Write error logs to a separate error log file
-    new winston.transports.File({
-      level: 'error',
+    // Error log file (error level only)
+    new transports.File({
       filename: path.join(logsDir, 'error.log'),
-      maxsize: 5 * 1024 * 1024, // 5MB
-      maxFiles: 5,
-    }),
-    
-    // Write additional stream for verbose logs (debug)
-    new winston.transports.File({
-      level: 'verbose',
-      filename: path.join(logsDir, 'verbose.log'),
-      maxsize: 10 * 1024 * 1024, // 10MB
-      maxFiles: 2,
-    }),
-    
-    // Write interaction debug logs to a separate file
-    new winston.transports.File({
-      level: 'debug',
-      filename: path.join(logsDir, 'interaction-debug.log'),
-      maxsize: 10 * 1024 * 1024,
-      maxFiles: 1,
+      level: 'error'
     })
   ],
-  // Handle uncaught exceptions
+  // Handle uncaught exceptions and rejections
   exceptionHandlers: [
-    new winston.transports.File({ filename: path.join(logsDir, 'exceptions.log') })
+    new transports.File({ 
+      filename: path.join(logsDir, 'exceptions.log')
+    })
   ],
-  // Handle uncaught promise rejections
   rejectionHandlers: [
-    new winston.transports.File({ filename: path.join(logsDir, 'rejections.log') })
+    new transports.File({ 
+      filename: path.join(logsDir, 'rejections.log')
+    })
   ]
 });
 
-// Create sensitive info logger (for non-error info logs related to security)
+// Special logger for Discord interactions 
+const interactionLogger = winston.createLogger({
+  level: 'debug',
+  format: fileFormat,
+  defaultMeta: { service: 'interaction' },
+  transports: [
+    // Debug-level interaction log
+    new transports.File({
+      filename: path.join(logsDir, 'interaction-debug.log'),
+      level: 'debug'
+    })
+  ]
+});
+
+// Add verbose transport only in development
+if (process.env.NODE_ENV !== 'production') {
+  logger.add(
+    new transports.File({
+      filename: path.join(logsDir, 'verbose.log'),
+      level: 'verbose'
+    })
+  );
+}
+
+// Logger for sensitive information
 const secureLogger = winston.createLogger({
   level: 'info',
-  format: logFormat,
+  format: fileFormat,
+  defaultMeta: { service: 'secure' },
   transports: [
-    // Write to secure-info.log
-    new winston.transports.File({
-      filename: path.join(logsDir, 'secure-info.log'),
-      maxsize: 5 * 1024 * 1024,
-      maxFiles: 2,
-    }),
-    
-    // Write errors to secure-error.log
-    new winston.transports.File({
-      level: 'error',
+    // Secure error log
+    new transports.File({
       filename: path.join(logsDir, 'secure-error.log'),
-      maxsize: 5 * 1024 * 1024,
-      maxFiles: 2,
+      level: 'error'
+    }),
+    // Secure info log
+    new transports.File({
+      filename: path.join(logsDir, 'secure-info.log'),
+      level: 'info'
     })
   ]
 });
 
-// Create offline logger for events that happen when bot is offline
+// Logger for when bot is offline
 const offlineLogger = winston.createLogger({
   level: 'info',
-  format: logFormat,
+  format: fileFormat,
+  defaultMeta: { service: 'offline' },
   transports: [
-    new winston.transports.File({
+    new transports.File({
       filename: path.join(logsDir, 'offline-info.log'),
-      maxsize: 5 * 1024 * 1024,
-      maxFiles: 2
+      level: 'info'
     })
   ]
 });
-
-// Add debug log to console in development mode
-if (process.env.NODE_ENV === 'development' || process.env.DEBUG === 'true') {
-  logger.level = 'debug';
-  logger.add(new winston.transports.Console({
-    format: winston.format.combine(
-      winston.format.colorize(),
-      logFormat
-    ),
-    level: 'debug'
-  }));
-}
 
 module.exports = {
   logger,
+  interactionLogger,
   secureLogger,
   offlineLogger
 };

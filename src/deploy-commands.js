@@ -5,112 +5,103 @@
 require('dotenv').config();
 const { REST } = require('@discordjs/rest');
 const { Routes } = require('discord-api-types/v10');
-const { clientId, commands: commandConfig } = require('./config');
+const { commands: cmdConfig } = require('./config');
+const { logger } = require('./utils/logger');
 const fs = require('fs');
 const path = require('path');
-const { logger } = require('./utils/logger');
 
-const token = process.env.DISCORD_BOT_TOKEN;
-const guildId = process.env.GUILD_ID;
-
-if (!token) {
-  logger.error('Deploy-commands error: No Discord bot token provided in environment variables');
+// Check for required token and client ID
+if (!process.env.DISCORD_BOT_TOKEN) {
+  logger.error('Missing DISCORD_BOT_TOKEN environment variable');
   process.exit(1);
 }
 
-if (!clientId) {
-  logger.error('Deploy-commands error: No client ID provided in environment variables');
+if (!process.env.CLIENT_ID) {
+  logger.error('Missing CLIENT_ID environment variable');
   process.exit(1);
 }
 
 async function main() {
   try {
-    logger.info('Starting command deployment...');
+    // Create REST client for Discord API
+    const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN);
+    const clientId = process.env.CLIENT_ID;
     
-    // Array for command data
-    const commandsData = [];
+    logger.info('Starting slash command deployment...');
     
-    // Get commands directory absolute path
-    const commandsPath = path.join(__dirname, 'commands');
+    // Array to store command data
+    const commands = [];
     
-    // Get all command categories folders
-    const commandCategories = fs.readdirSync(commandsPath).filter(
-      file => fs.statSync(path.join(commandsPath, file)).isDirectory()
-    );
-    
-    // Load commands from each category folder
-    for (const category of commandCategories) {
-      const categoryPath = path.join(commandsPath, category);
-      const commandFiles = fs.readdirSync(categoryPath).filter(file => file.endsWith('.js'));
+    // Function to load commands from a directory
+    const loadCommandsFromDir = (dir) => {
+      if (!fs.existsSync(dir)) return;
       
-      logger.info(`Loading commands from category: ${category}`);
+      const items = fs.readdirSync(dir, { withFileTypes: true });
       
-      for (const file of commandFiles) {
-        const filePath = path.join(categoryPath, file);
-        const command = require(filePath);
+      for (const item of items) {
+        const itemPath = path.join(dir, item.name);
         
-        if ('data' in command && 'execute' in command) {
-          commandsData.push(command.data.toJSON());
-          logger.verbose(`Loaded command: ${command.data.name}`);
-        } else {
-          logger.warn(`Command at ${filePath} is missing required "data" or "execute" property`);
+        if (item.isDirectory()) {
+          // Recursively load commands from subdirectory
+          loadCommandsFromDir(itemPath);
+        } else if (item.name.endsWith('.js')) {
+          try {
+            const command = require(itemPath);
+            
+            // Only add commands with proper data property
+            if (command.data && command.data.toJSON) {
+              commands.push(command.data.toJSON());
+              logger.debug(`Loaded command: ${command.data.name}`);
+            }
+          } catch (error) {
+            logger.error(`Error loading command from ${itemPath}: ${error.message}`);
+          }
         }
       }
-    }
+    };
     
-    logger.info(`Loaded ${commandsData.length} commands total`);
+    // Load all command files
+    const commandsPath = path.join(__dirname, 'commands');
+    loadCommandsFromDir(commandsPath);
     
-    // Create REST instance
-    const rest = new REST({ version: '10' }).setToken(token);
+    logger.info(`Found ${commands.length} commands to register`);
     
-    // Register commands
-    if (guildId && !commandConfig.globalCommands) {
-      // Guild-only registration (for testing)
-      logger.info(`Registering ${commandsData.length} commands to guild ${guildId}...`);
-      
-      await rest.put(
-        Routes.applicationGuildCommands(clientId, guildId),
-        { body: commandsData },
-      );
-      
-      logger.info(`Successfully registered ${commandsData.length} commands to guild ${guildId}`);
-      
-      // Log commands to a file
-      fs.writeFileSync('./guild-commands.log', JSON.stringify(commandsData, null, 2));
+    // Log commands list
+    commands.forEach(cmd => logger.debug(`- ${cmd.name}`));
+    
+    // Handle deployment based on target (global or guild-specific)
+    const devGuildIds = cmdConfig.devGuildIds || [];
+    
+    if (devGuildIds.length > 0) {
+      // Deploy to specific development guild(s)
+      for (const guildId of devGuildIds) {
+        logger.info(`Deploying ${commands.length} commands to guild ${guildId}...`);
+        
+        await rest.put(
+          Routes.applicationGuildCommands(clientId, guildId),
+          { body: commands }
+        );
+        
+        logger.info(`Successfully deployed commands to guild ${guildId}`);
+      }
     } else {
-      // Global registration
-      logger.info(`Registering ${commandsData.length} commands globally...`);
+      // Deploy globally
+      logger.info(`Deploying ${commands.length} commands globally...`);
       
       await rest.put(
         Routes.applicationCommands(clientId),
-        { body: commandsData },
+        { body: commands }
       );
       
-      logger.info(`Successfully registered ${commandsData.length} commands globally`);
-      
-      // Log commands to a file
-      fs.writeFileSync('./global-commands.log', JSON.stringify(commandsData, null, 2));
-    }
-    
-    // If we also want guild-specific commands when in production
-    if (guildId && commandConfig.globalCommands) {
-      logger.info(`Also registering commands to development guild ${guildId}...`);
-      
-      await rest.put(
-        Routes.applicationGuildCommands(clientId, guildId),
-        { body: commandsData },
-      );
-      
-      logger.info(`Successfully registered commands to development guild ${guildId}`);
-      
-      // Log commands to a file for the guild separately
-      fs.writeFileSync('./guild-commands-all.log', JSON.stringify(commandsData, null, 2));
+      logger.info('Successfully deployed commands globally');
     }
   } catch (error) {
-    logger.error(`Error deploying commands: ${error.message}`);
-    console.error(error);
+    logger.error(`Command deployment error: ${error.message}`, { error });
   }
 }
 
-// Execute the main function
-main();
+// Execute the script
+main().catch(error => {
+  logger.error(`Unhandled error: ${error.message}`, { error });
+  process.exit(1);
+});

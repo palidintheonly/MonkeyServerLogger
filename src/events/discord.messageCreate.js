@@ -1,0 +1,296 @@
+/**
+ * Discord.js Message Event
+ * Handles incoming messages, specifically for DMs to enable modmail functionality
+ */
+const { Events, ChannelType } = require('discord.js');
+const { logger } = require('../utils/logger');
+const { createInfoEmbed } = require('../utils/embedBuilder');
+const { createModmailThread } = require('../utils/modmail');
+
+module.exports = {
+  name: Events.MessageCreate,
+  
+  async execute(message, client) {
+    // Ignore messages from bots
+    if (message.author.bot) return;
+    
+    // Handle DM messages for modmail
+    if (message.channel.type === ChannelType.DM) {
+      // Check if the message has content or attachments
+      if (!message.content && message.attachments.size === 0) return;
+      
+      try {
+        logger.info(`Received DM from ${message.author.tag} (${message.author.id}): ${message.content.substring(0, 50)}${message.content.length > 50 ? '...' : ''}`);
+        
+        // Check if user has existing active modmail threads
+        const existingThreads = await client.db.ModmailThread.findAll({
+          where: {
+            userId: message.author.id,
+            open: true
+          }
+        });
+        
+        if (existingThreads.length > 0) {
+          // User has one or more active threads
+          await handleExistingThreads(message, client, existingThreads);
+        } else {
+          // User doesn't have any active threads
+          await handleNewModmail(message, client);
+        }
+      } catch (error) {
+        logger.error(`Error handling DM from ${message.author.tag}: ${error.message}`, { error });
+        
+        // Send a generic error message
+        try {
+          await message.reply({
+            content: "I'm sorry, but there was an error processing your message. Please try again later."
+          });
+        } catch (replyError) {
+          logger.error(`Error sending error reply: ${replyError.message}`);
+        }
+      }
+    }
+  }
+};
+
+/**
+ * Handle case where user has existing modmail threads
+ * @param {Message} message - Original DM
+ * @param {Client} client - Discord client
+ * @param {Array<ModmailThread>} existingThreads - Active modmail threads
+ */
+async function handleExistingThreads(message, client, existingThreads) {
+  try {
+    // If there's only one thread, forward the message to that thread
+    if (existingThreads.length === 1) {
+      const thread = existingThreads[0];
+      
+      // Get the guild
+      const guild = client.guilds.cache.get(thread.guildId);
+      
+      if (!guild) {
+        // Guild no longer exists or bot was removed, close the thread
+        await thread.closeThread('SYSTEM', 'Guild not accessible');
+        return message.reply({
+          content: "I can no longer access the server for your existing thread. It may have been deleted or I may have been removed from it. Your thread has been closed."
+        });
+      }
+      
+      // Get the channel
+      const channel = await guild.channels.fetch(thread.id).catch(() => null);
+      
+      if (!channel) {
+        // Channel was deleted, close the thread and create a new one
+        await thread.closeThread('SYSTEM', 'Channel not found, creating new thread');
+        
+        // Ask the user if they want to create a new thread with this guild
+        const confirmMessage = await message.reply({
+          content: `Your previous thread with **${guild.name}** could not be found. Would you like to create a new one?`,
+          components: [
+            {
+              type: 1, // ACTION_ROW
+              components: [
+                {
+                  type: 2, // BUTTON
+                  style: 3, // SUCCESS
+                  label: 'Create New Thread',
+                  custom_id: `new_thread_${guild.id}`
+                },
+                {
+                  type: 2, // BUTTON
+                  style: 4, // DANGER
+                  label: 'Cancel',
+                  custom_id: 'cancel_thread'
+                }
+              ]
+            }
+          ]
+        });
+        
+        // Wait for button interaction
+        try {
+          const buttonInteraction = await confirmMessage.awaitMessageComponent({
+            filter: i => i.user.id === message.author.id,
+            time: 300000 // 5 minutes
+          });
+          
+          if (buttonInteraction.customId === `new_thread_${guild.id}`) {
+            await buttonInteraction.update({
+              content: 'Creating new thread...',
+              components: []
+            });
+            
+            // Create a new thread
+            await createModmailThread(message, client, guild);
+            
+            await buttonInteraction.editReply({
+              content: `Your message has been sent to the staff of **${guild.name}**. They will respond to you here in DMs.`
+            });
+          } else if (buttonInteraction.customId === 'cancel_thread') {
+            await buttonInteraction.update({
+              content: 'Thread creation cancelled.',
+              components: []
+            });
+          }
+        } catch (timeoutError) {
+          // Button interaction timed out
+          await confirmMessage.edit({
+            content: 'Thread creation timed out. You can try sending your message again.',
+            components: []
+          });
+        }
+        
+        return;
+      }
+      
+      // Thread exists and channel exists, forward the message
+      // Update the thread's activity timestamp
+      await thread.updateActivity();
+      
+      // Create an embed for the forwarded message
+      const forwardEmbed = {
+        author: {
+          name: message.author.tag,
+          icon_url: message.author.displayAvatarURL({ dynamic: true })
+        },
+        description: message.content || '*No content*',
+        color: 0x2F3136, // Discord dark theme color
+        timestamp: new Date().toISOString()
+      };
+      
+      // Send the embed and attachments to the thread channel
+      await channel.send({ 
+        embeds: [forwardEmbed],
+        files: [...message.attachments.values()]
+      });
+      
+      // Increment message count
+      thread.messageCount += 1;
+      await thread.save();
+      
+      // Send confirmation to the user
+      await message.react('✅').catch(() => {});
+      
+      return;
+    }
+    
+    // User has multiple active threads
+    // Create a selection menu for the user to choose which thread to continue
+    
+    const selectOptions = await Promise.all(
+      existingThreads.map(async thread => {
+        const guild = client.guilds.cache.get(thread.guildId);
+        return {
+          label: guild ? guild.name : `Unknown Server (${thread.guildId})`,
+          description: `Continue your conversation with ${guild ? guild.name : 'this server'}`,
+          value: thread.guildId
+        };
+      })
+    );
+    
+    // Add option to create a new thread
+    selectOptions.push({
+      label: 'New Conversation',
+      description: 'Start a new conversation with a different server',
+      value: 'new_conversation'
+    });
+    
+    // Create and send the select menu
+    await message.reply({
+      content: 'You have multiple active modmail threads. Where would you like to send this message?',
+      components: [
+        {
+          type: 1, // ACTION_ROW
+          components: [
+            {
+              type: 3, // SELECT_MENU
+              custom_id: 'modmail_thread_select',
+              placeholder: 'Select a conversation',
+              options: selectOptions
+            }
+          ]
+        }
+      ]
+    });
+  } catch (error) {
+    logger.error(`Error handling existing threads: ${error.message}`, { error });
+    throw error; // Propagate to main handler
+  }
+}
+
+/**
+ * Handle creation of a new modmail thread
+ * @param {Message} message - Original DM
+ * @param {Client} client - Discord client
+ */
+async function handleNewModmail(message, client) {
+  try {
+    // Find all guilds where:
+    // 1. The user is a member
+    // 2. Modmail is enabled
+    const guildsWithModmail = [];
+    
+    for (const [guildId, guild] of client.guilds.cache) {
+      // Check if user is in this guild
+      const member = await guild.members.fetch(message.author.id).catch(() => null);
+      if (!member) continue;
+      
+      // Check if modmail is enabled
+      const guildSettings = await client.db.Guild.findOne({
+        where: { guildId }
+      });
+      
+      const modmailEnabled = guildSettings && guildSettings.getSetting('modmail.enabled');
+      if (!modmailEnabled) continue;
+      
+      guildsWithModmail.push(guild);
+    }
+    
+    if (guildsWithModmail.length === 0) {
+      // User is not in any guilds with modmail enabled
+      return message.reply({
+        embeds: [createInfoEmbed(
+          "I couldn't find any servers where you're a member and modmail is enabled. If you believe this is an error, please contact a server administrator.",
+          "No Modmail Servers Found"
+        )]
+      });
+    }
+    
+    if (guildsWithModmail.length === 1) {
+      // Only one guild with modmail enabled, use that one
+      const guild = guildsWithModmail[0];
+      await createModmailThread(message, client, guild);
+      
+      return message.reply({
+        content: `Your message has been sent to the staff of **${guild.name}**. They will respond to you here in DMs.`
+      });
+    }
+    
+    // Multiple guilds with modmail, let user select one
+    const selectOptions = guildsWithModmail.map(guild => ({
+      label: guild.name,
+      description: `Send your message to ${guild.name}`,
+      value: guild.id
+    }));
+    
+    await message.reply({
+      content: 'Please select which server you\'d like to contact:',
+      components: [
+        {
+          type: 1, // ACTION_ROW
+          components: [
+            {
+              type: 3, // SELECT_MENU
+              custom_id: 'modmail_guild_select',
+              placeholder: 'Select a server',
+              options: selectOptions
+            }
+          ]
+        }
+      ]
+    });
+  } catch (error) {
+    logger.error(`Error handling new modmail: ${error.message}`, { error });
+    throw error; // Propagate to main handler
+  }
+}
