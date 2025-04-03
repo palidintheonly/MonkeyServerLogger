@@ -28,8 +28,8 @@ module.exports = {
             .addChannelTypes(ChannelType.GuildText)
         )
         .addBooleanOption(option =>
-          option.setName('enable_modmail')
-            .setDescription('Enable modmail system')
+          option.setName('verbose_logging')
+            .setDescription('Enable verbose logging')
             .setRequired(false)
         )
     )
@@ -43,21 +43,10 @@ module.exports = {
             .setRequired(true)
             .addChannelTypes(ChannelType.GuildText)
         )
-    )
-    .addSubcommand(subcommand =>
-      subcommand
-        .setName('modmail')
-        .setDescription('Configure the modmail system')
         .addBooleanOption(option =>
-          option.setName('enabled')
-            .setDescription('Enable or disable the modmail system')
-            .setRequired(true)
-        )
-        .addChannelOption(option =>
-          option.setName('channel')
-            .setDescription('Modmail info channel')
+          option.setName('verbose')
+            .setDescription('Enable verbose logging')
             .setRequired(false)
-            .addChannelTypes(ChannelType.GuildText)
         )
     )
     .addSubcommand(subcommand =>
@@ -82,29 +71,7 @@ module.exports = {
       const guildSettings = await models.Guild.findOrCreateGuild(interaction.guild.id);
       
       // Handle different subcommands
-      let subcommand;
-      try {
-        subcommand = interaction.options.getSubcommand();
-      } catch (error) {
-        // No subcommand specified, show help message
-        const embed = createEmbed({
-          title: '⚙️ Bot Setup',
-          description: 'Please specify a subcommand to configure the bot.',
-          color: '#3498db',
-          fields: [
-            { name: '`/setup wizard`', value: 'Start the step-by-step setup wizard' },
-            { name: '`/setup logs`', value: 'Configure logging channels' },
-            { name: '`/setup modmail`', value: 'Configure the modmail system' },
-            { name: '`/setup reset`', value: 'Reset bot configuration' }
-          ]
-        });
-        
-        await interaction.reply({
-          embeds: [embed],
-          ephemeral: true
-        });
-        return;
-      }
+      const subcommand = interaction.options.getSubcommand();
       
       switch (subcommand) {
         case 'wizard':
@@ -113,10 +80,6 @@ module.exports = {
           
         case 'logs':
           await this.handleLogs(interaction, client, guildSettings);
-          break;
-          
-        case 'modmail':
-          await this.handleModmail(interaction, client, guildSettings);
           break;
           
         case 'reset':
@@ -131,15 +94,26 @@ module.exports = {
       }
     } catch (error) {
       logger.error(`Error executing setup command: ${error.message}`);
-      await interaction.reply({
-        embeds: [createErrorEmbed(`An error occurred: ${error.message}`)],
-        ephemeral: true
-      }).catch(e => logger.error(`Failed to reply with error: ${e.message}`));
+      
+      try {
+        if (!interaction.replied && !interaction.deferred) {
+          await interaction.reply({
+            embeds: [createErrorEmbed(`An error occurred: ${error.message}`)],
+            ephemeral: true
+          });
+        } else if (interaction.deferred) {
+          await interaction.editReply({
+            embeds: [createErrorEmbed(`An error occurred: ${error.message}`)]
+          });
+        }
+      } catch (replyError) {
+        logger.error(`Failed to reply with error: ${replyError.message}`);
+      }
     }
   },
   
   /**
-   * Handle the setup wizard subcommand
+   * Handle the wizard subcommand
    * @param {Object} interaction - Discord interaction
    * @param {Object} client - Discord client
    * @param {Object} guildSettings - Guild settings from database
@@ -150,15 +124,26 @@ module.exports = {
     try {
       // Get options from the slash command
       const logsChannel = interaction.options.getChannel('logs_channel');
-      const enableModmail = interaction.options.getBoolean('enable_modmail') ?? false;
+      const verboseLogging = interaction.options.getBoolean('verbose_logging') ?? false;
+      
+      // Check permissions in the log channel
+      const permissions = logsChannel.permissionsFor(interaction.guild.members.me);
+      if (!permissions.has(PermissionsBitField.Flags.SendMessages) || 
+          !permissions.has(PermissionsBitField.Flags.EmbedLinks)) {
+        await interaction.editReply({
+          embeds: [createErrorEmbed('I don\'t have permission to send messages and embeds in that channel. Please adjust the permissions or choose another channel.')]
+        });
+        return;
+      }
       
       // Update logging settings
       await guildSettings.update({
         loggingChannelId: logsChannel.id,
-        setupCompleted: true
+        setupCompleted: true,
+        verboseLoggingEnabled: verboseLogging
       });
       
-      // Create initial embed
+      // Create setup result embed
       const embed = createSuccessEmbed(
         `Setup initiated for ${interaction.guild.name}`,
         "Setup Wizard"
@@ -166,68 +151,40 @@ module.exports = {
       
       embed.addFields(
         { name: "📋 Logging Channel", value: `${logsChannel}`, inline: false },
-        { name: "📬 Modmail", value: enableModmail ? "Enabled" : "Disabled", inline: false }
+        { name: "📊 Verbose Logging", value: verboseLogging ? "Enabled" : "Disabled", inline: false }
       );
       
-      // Check if modmail should be enabled
-      if (enableModmail) {
+      // Setup verbose logging if enabled
+      let verboseChannel = null;
+      if (verboseLogging) {
         try {
-          // Create a modmail category if one doesn't exist
-          const category = await interaction.guild.channels.create({
-            name: 'Modmail Tickets',
-            type: ChannelType.GuildCategory,
-            permissionOverwrites: [
-              {
-                id: interaction.guild.id,
-                deny: [PermissionsBitField.Flags.ViewChannel]
-              },
-              {
-                id: interaction.guild.members.me.id,
-                allow: [PermissionsBitField.Flags.ViewChannel]
-              }
-            ]
-          });
-          
-          // Create an info channel
-          const infoChannel = await interaction.guild.channels.create({
-            name: 'modmail-info',
+          // Create a verbose logging channel
+          const verboseChannelName = `${logsChannel.name}-verbose`;
+          verboseChannel = await interaction.guild.channels.create({
+            name: verboseChannelName,
             type: ChannelType.GuildText,
-            parent: category,
-            permissionOverwrites: [
-              {
-                id: interaction.guild.id,
-                deny: [PermissionsBitField.Flags.ViewChannel]
-              },
-              {
-                id: interaction.guild.members.me.id,
-                allow: [PermissionsBitField.Flags.ViewChannel]
-              }
-            ]
+            topic: `Verbose Logging Channel | All debug and detailed logs`,
+            reason: 'Bot Logging System Setup - Verbose Logging'
           });
           
-          // Update guild settings with modmail info
           await guildSettings.update({
-            modmailEnabled: true,
-            modmailCategoryId: category.id,
-            modmailInfoChannelId: infoChannel.id
+            verboseLoggingEnabled: true,
+            verboseLoggingChannelId: verboseChannel.id
           });
           
-          // Send info to the modmail info channel
-          await infoChannel.send({
-            embeds: [createEmbed({
-              title: "📬 Modmail System Info",
-              description: "This channel will display information about modmail conversations.",
-              fields: [
-                { name: "How It Works", value: "Users can DM the bot to contact server moderators." },
-                { name: "Setup Info", value: `Set up by: ${interaction.user}\nSetup Date: ${new Date().toISOString()}` }
-              ]
-            })]
+          // Welcome message for verbose logging channel
+          const verboseWelcomeEmbed = createEmbed({
+            title: '🔍 Verbose Logging Channel',
+            description: 'This channel contains detailed debug logs and additional information not included in the main logging channel.',
+            color: '#5865F2',
+            timestamp: true
           });
           
-          embed.addFields({ name: "📬 Modmail Setup", value: "✅ Modmail has been set up successfully!", inline: false });
+          await verboseChannel.send({ embeds: [verboseWelcomeEmbed] });
+          embed.addFields({ name: "🔍 Verbose Channel", value: `${verboseChannel}`, inline: false });
         } catch (error) {
-          logger.error(`Error setting up modmail: ${error.message}`);
-          embed.addFields({ name: "📬 Modmail Setup Error", value: `❌ ${error.message}`, inline: false });
+          logger.error(`Error setting up verbose logging: ${error.message}`);
+          embed.addFields({ name: "🔍 Verbose Logging Error", value: `❌ ${error.message}`, inline: false });
         }
       }
       
@@ -242,14 +199,27 @@ module.exports = {
         })]
       });
       
-      // Create a confirmation button
+      // Create a confirmation button and add hint about modmail
       const finishButton = new ButtonBuilder()
         .setCustomId('setup-finish')
         .setLabel('Finish Setup')
         .setStyle(ButtonStyle.Success)
         .setEmoji('✅');
       
-      const row = new ActionRowBuilder().addComponents(finishButton);
+      const modmailButton = new ButtonBuilder()
+        .setCustomId('setup-modmail')
+        .setLabel('Setup Modmail')
+        .setStyle(ButtonStyle.Primary)
+        .setEmoji('📬');
+      
+      const row = new ActionRowBuilder().addComponents(finishButton, modmailButton);
+      
+      // Add hint about modmail setup
+      embed.addFields({
+        name: "📬 Need Modmail?",
+        value: "Use the `/modmail-setup` command to configure the modmail system separately, or click the button below.",
+        inline: false
+      });
       
       // Respond to the user
       await interaction.editReply({
@@ -275,12 +245,68 @@ module.exports = {
     
     try {
       const channel = interaction.options.getChannel('channel');
+      const verbose = interaction.options.getBoolean('verbose') ?? false;
+      
+      // Check permissions in the log channel
+      const permissions = channel.permissionsFor(interaction.guild.members.me);
+      if (!permissions.has(PermissionsBitField.Flags.SendMessages) || 
+          !permissions.has(PermissionsBitField.Flags.EmbedLinks)) {
+        await interaction.editReply({
+          embeds: [createErrorEmbed('I don\'t have permission to send messages and embeds in that channel. Please adjust the permissions or choose another channel.')]
+        });
+        return;
+      }
       
       // Update the logging channel in database
       await guildSettings.update({
         loggingChannelId: channel.id,
-        setupCompleted: true
+        setupCompleted: true,
+        verboseLoggingEnabled: verbose
       });
+      
+      // Create response embed
+      const embed = createSuccessEmbed(
+        `Logging channel has been set to ${channel}`,
+        "Logging Setup"
+      );
+      
+      embed.addFields(
+        { name: "📊 Verbose Logging", value: verbose ? "Enabled" : "Disabled", inline: false }
+      );
+      
+      // Setup verbose logging if enabled
+      if (verbose) {
+        try {
+          // Create a verbose logging channel
+          const verboseChannelName = `${channel.name}-verbose`;
+          const verboseChannel = await interaction.guild.channels.create({
+            name: verboseChannelName,
+            type: ChannelType.GuildText,
+            topic: `Verbose Logging Channel | All debug and detailed logs`,
+            reason: 'Bot Logging System Setup - Verbose Logging'
+          });
+          
+          await guildSettings.update({
+            verboseLoggingEnabled: true,
+            verboseLoggingChannelId: verboseChannel.id
+          });
+          
+          // Send info message to the verbose channel
+          await verboseChannel.send({
+            embeds: [createEmbed({
+              title: '🔍 Verbose Logging Channel',
+              description: 'This channel contains detailed debug logs and additional information.',
+              color: '#5865F2',
+              timestamp: true
+            })]
+          });
+          
+          embed.addFields({ name: "🔍 Verbose Channel", value: `${verboseChannel}`, inline: false });
+        } catch (error) {
+          logger.error(`Error setting up verbose logging channel: ${error.message}`);
+          embed.addFields({ name: "Error", value: `Failed to create verbose logging channel: ${error.message}`, inline: false });
+        }
+      }
       
       // Send a test message to confirm it's working
       await channel.send({
@@ -295,122 +321,12 @@ module.exports = {
       
       // Respond to the user
       await interaction.editReply({
-        embeds: [createSuccessEmbed(
-          `Logging channel has been set to ${channel}.`,
-          "Logging Setup"
-        )]
+        embeds: [embed]
       });
     } catch (error) {
       logger.error(`Error setting up logging channel: ${error.message}`);
       await interaction.editReply({
         embeds: [createErrorEmbed(`Failed to set up logging channel: ${error.message}`)]
-      });
-    }
-  },
-  
-  /**
-   * Handle the modmail subcommand
-   * @param {Object} interaction - Discord interaction
-   * @param {Object} client - Discord client
-   * @param {Object} guildSettings - Guild settings from database
-   */
-  async handleModmail(interaction, client, guildSettings) {
-    await interaction.deferReply({ ephemeral: true });
-    
-    try {
-      const enabled = interaction.options.getBoolean('enabled');
-      const channel = interaction.options.getChannel('channel');
-      
-      if (enabled) {
-        // Set up modmail system
-        let category;
-        let infoChannel = channel;
-        
-        // If no channel is provided or if there's no existing modmail category
-        if (!infoChannel || !guildSettings.modmailCategoryId) {
-          // Create a new category
-          category = await interaction.guild.channels.create({
-            name: 'Modmail Tickets',
-            type: ChannelType.GuildCategory,
-            permissionOverwrites: [
-              {
-                id: interaction.guild.id,
-                deny: [PermissionsBitField.Flags.ViewChannel]
-              },
-              {
-                id: interaction.guild.members.me.id,
-                allow: [PermissionsBitField.Flags.ViewChannel]
-              }
-            ]
-          });
-          
-          // Only create an info channel if one wasn't provided
-          if (!infoChannel) {
-            infoChannel = await interaction.guild.channels.create({
-              name: 'modmail-info',
-              type: ChannelType.GuildText,
-              parent: category,
-              permissionOverwrites: [
-                {
-                  id: interaction.guild.id,
-                  deny: [PermissionsBitField.Flags.ViewChannel]
-                },
-                {
-                  id: interaction.guild.members.me.id,
-                  allow: [PermissionsBitField.Flags.ViewChannel]
-                }
-              ]
-            });
-          } else if (category) {
-            // If a channel was provided but we created a new category
-            await infoChannel.setParent(category.id, { lockPermissions: false });
-          }
-        }
-        
-        // Update guild settings
-        await guildSettings.update({
-          modmailEnabled: true,
-          modmailCategoryId: category?.id || guildSettings.modmailCategoryId,
-          modmailInfoChannelId: infoChannel.id
-        });
-        
-        // Send info to the modmail info channel
-        await infoChannel.send({
-          embeds: [createEmbed({
-            title: "📬 Modmail System Info",
-            description: "This channel will display information about modmail conversations.",
-            fields: [
-              { name: "How It Works", value: "Users can DM the bot to contact server moderators." },
-              { name: "Setup Info", value: `Set up by: ${interaction.user}\nSetup Date: ${new Date().toISOString()}` }
-            ]
-          })]
-        });
-        
-        // Respond to the user
-        await interaction.editReply({
-          embeds: [createSuccessEmbed(
-            `Modmail system has been enabled. Info channel: ${infoChannel}`,
-            "Modmail Setup"
-          )]
-        });
-      } else {
-        // Disable modmail system
-        await guildSettings.update({
-          modmailEnabled: false
-        });
-        
-        // Respond to the user
-        await interaction.editReply({
-          embeds: [createSuccessEmbed(
-            "Modmail system has been disabled.",
-            "Modmail Setup"
-          )]
-        });
-      }
-    } catch (error) {
-      logger.error(`Error setting up modmail: ${error.message}`);
-      await interaction.editReply({
-        embeds: [createErrorEmbed(`Failed to set up modmail: ${error.message}`)]
       });
     }
   },
@@ -422,8 +338,6 @@ module.exports = {
    * @param {Object} guildSettings - Guild settings from database
    */
   async handleReset(interaction, client, guildSettings) {
-    await interaction.deferReply({ ephemeral: true });
-    
     try {
       // Create confirmation buttons
       const confirmButton = new ButtonBuilder()
@@ -445,7 +359,7 @@ module.exports = {
           title: "⚠️ Reset Confirmation",
           description: "Are you sure you want to reset all bot settings for this server?",
           fields: [
-            { name: "Warning", value: "This action will reset all logging and modmail settings. It cannot be undone." }
+            { name: "Warning", value: "This action will reset all logging settings. It cannot be undone." }
           ],
           color: "#FF0000" // Red
         })],
@@ -465,68 +379,54 @@ module.exports = {
    * @param {Object} client - Discord client
    */
   async handleButton(interaction, client) {
-    // Get guild settings from database
-    const guildSettings = await models.Guild.findOrCreateGuild(interaction.guild.id);
-    
-    switch (interaction.customId) {
-      case 'setup-finish':
-        // Handle finish setup button
-        await interaction.update({
-          embeds: [createSuccessEmbed(
-            "Setup completed successfully!",
-            "Setup Complete"
-          )],
-          components: []
+    try {
+      const customId = interaction.customId;
+      const guildSettings = await models.Guild.findOrCreateGuild(interaction.guild.id);
+      
+      if (customId === 'setup-finish') {
+        await interaction.reply({
+          embeds: [createSuccessEmbed('Setup completed successfully!', 'Setup Complete')],
+          ephemeral: true
         });
-        break;
-        
-      case 'setup-reset-confirm':
-        // Reset guild settings
+      } else if (customId === 'setup-modmail') {
+        // Redirect to modmail setup
+        await interaction.reply({
+          embeds: [createEmbed({
+            title: '📬 Modmail Setup',
+            description: 'Please use the `/modmail-setup` command to configure the modmail system.',
+            color: '#5865F2'
+          })],
+          ephemeral: true
+        });
+      } else if (customId === 'setup-reset-confirm') {
+        // Reset all guild settings
         await guildSettings.update({
-          loggingChannelId: null,
-          modmailEnabled: false,
-          modmailCategoryId: null,
-          modmailInfoChannelId: null,
-          categoryChannels: {},
-          ignoredChannels: [],
-          ignoredRoles: [],
-          enabledCategories: {},
           setupCompleted: false,
-          setupProgress: 0,
-          setupData: {},
+          loggingChannelId: null,
           verboseLoggingEnabled: false,
           verboseLoggingChannelId: null
         });
         
-        // Respond to the user
-        await interaction.update({
-          embeds: [createSuccessEmbed(
-            "All bot settings have been reset to default values.",
-            "Reset Complete"
-          )],
-          components: []
-        });
-        break;
-        
-      case 'setup-reset-cancel':
-        // Cancel reset
-        await interaction.update({
-          embeds: [createEmbed({
-            title: "Reset Cancelled",
-            description: "The reset operation has been cancelled. Your settings remain unchanged.",
-            color: "#00FF00" // Green
-          })],
-          components: []
-        });
-        break;
-        
-      default:
-        // Handle unknown button
-        logger.warn(`Unknown button ID for setup: ${interaction.customId}`);
         await interaction.reply({
-          embeds: [createErrorEmbed("Unknown button interaction.")],
+          embeds: [createSuccessEmbed('All bot settings have been reset. Please run `/setup` again to reconfigure the bot.', 'Reset Complete')],
           ephemeral: true
         });
+      } else if (customId === 'setup-reset-cancel') {
+        await interaction.reply({
+          embeds: [createEmbed({
+            title: '❌ Reset Cancelled',
+            description: 'The reset operation has been cancelled.',
+            color: '#5865F2'
+          })],
+          ephemeral: true
+        });
+      }
+    } catch (error) {
+      logger.error(`Error handling button interaction: ${error.message}`);
+      await interaction.reply({
+        embeds: [createErrorEmbed(`An error occurred: ${error.message}`)],
+        ephemeral: true
+      });
     }
   }
 };
