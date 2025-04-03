@@ -78,13 +78,26 @@ module.exports = {
     } catch (error) {
       logger.error(`Error handling interaction: ${error.message}`, { error });
       
+      // Check if the error is an Unknown Interaction error (10062) which means it timed out
+      const isUnknownInteraction = error.code === 10062 || 
+        (error.rawError && error.rawError.code === 10062) ||
+        error.message?.includes('Unknown interaction');
+      
+      // Don't attempt to respond if it's an unknown interaction error
+      if (isUnknownInteraction) {
+        logger.warn(`Interaction ${interaction.id} has expired and cannot be responded to.`);
+        return;
+      }
+      
       // Only try to respond if interaction hasn't been replied to already
       if (interaction.deferred || interaction.replied) {
         try {
           await interaction.editReply({
             embeds: [createErrorEmbed('An error occurred while processing this interaction.')],
             ephemeral: true
-          }).catch(() => {});
+          }).catch((followupError) => {
+            logger.error(`Error sending error response: ${followupError.message}`);
+          });
         } catch (followupError) {
           logger.error(`Error sending error response: ${followupError.message}`);
         }
@@ -93,7 +106,9 @@ module.exports = {
           await interaction.reply({
             embeds: [createErrorEmbed('An error occurred while processing this interaction.')],
             ephemeral: true
-          }).catch(() => {});
+          }).catch((replyError) => {
+            logger.error(`Could not send error response: ${replyError.message}`);
+          });
         } catch (replyError) {
           logger.error(`Could not send error response: ${replyError.message}`);
         }
@@ -237,7 +252,13 @@ async function handleModmailGuildSelect(interaction, client) {
       }
     });
     
-    const modmailEnabled = guildSettings && guildSettings.getSetting('modmail.enabled');
+    // Get modmail settings and explicitly check if enabled is true
+    const modmailSettings = guildSettings && guildSettings.getSetting('modmail') || {};
+    const modmailEnabled = modmailSettings.enabled === true;
+    
+    // Add debug logging
+    logger.debug(`Guild ${guild.name} (${selectedGuildId}) modmail settings: ${JSON.stringify(modmailSettings)}`);
+    logger.debug(`Guild ${guild.name} (${selectedGuildId}) modmail enabled: ${modmailEnabled}`);
     
     if (!modmailEnabled) {
       return interaction.editReply({
@@ -457,7 +478,14 @@ async function handleNewModmailConversation(interaction, client) {
         }
       });
       
-      const modmailEnabled = guildSettings && guildSettings.getSetting('modmail.enabled');
+      // Get modmail settings and explicitly check if enabled is true
+      const modmailSettings = guildSettings && guildSettings.getSetting('modmail') || {};
+      const modmailEnabled = modmailSettings.enabled === true;
+      
+      // Add debug logging
+      logger.debug(`Guild ${guild.name} (${guildId}) modmail settings: ${JSON.stringify(modmailSettings)}`);
+      logger.debug(`Guild ${guild.name} (${guildId}) modmail enabled: ${modmailEnabled}`);
+      
       if (!modmailEnabled) continue;
       
       guildsWithModmail.push(guild);

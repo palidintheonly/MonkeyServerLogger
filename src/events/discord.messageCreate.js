@@ -244,7 +244,14 @@ async function handleNewModmail(message, client) {
         }
       });
       
-      const modmailEnabled = guildSettings && guildSettings.getSetting('modmail.enabled');
+      // Get modmail settings and explicitly check if enabled is true
+      const modmailSettings = guildSettings && guildSettings.getSetting('modmail') || {};
+      const modmailEnabled = modmailSettings.enabled === true;
+      
+      // Add debug logging
+      console.log(`Guild ${guild.name} (${guildId}) modmail settings:`, modmailSettings);
+      console.log(`Guild ${guild.name} (${guildId}) modmail enabled:`, modmailEnabled);
+      
       if (!modmailEnabled) continue;
       
       guildsWithModmail.push(guild);
