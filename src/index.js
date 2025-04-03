@@ -3,7 +3,7 @@ const { Client, GatewayIntentBits, Collection, Events, REST, Routes } = require(
 const fs = require('fs');
 const path = require('path');
 const { logger } = require('./utils/logger');
-const { connectToDatabase } = require('./database/db');
+const { connectToDatabase, initModmailAutoClose } = require('./database/db');
 const config = require('./config');
 
 // This file is used both directly and by the sharding manager
@@ -30,6 +30,10 @@ const client = new Client({
 client.commands = new Collection();
 client.contextCommands = new Collection();
 client.cooldowns = new Collection();
+client.pendingModmailMessages = new Map();
+
+// Note: We no longer use these in-memory collections as they are now in the database
+// However, we keep the variables for backward compatibility with existing code
 client.activeModmailThreads = new Map();
 client.blockedModmailUsers = new Set();
 
@@ -318,6 +322,10 @@ async function init() {
     try {
       await client.login(token);
       logger.info('Successfully logged in to Discord!');
+      
+      // Initialize the modmail auto-close system
+      initModmailAutoClose(client);
+      logger.info('Initialized modmail auto-close system');
     } catch (loginError) {
       logger.safeError('Failed to log in to Discord', loginError);
       throw loginError;

@@ -92,8 +92,9 @@ module.exports = {
       // Get the active thread for this channel
       let threadInfo = null;
       let userId = null;
+      let thread = null;
       
-      // Initialize modmail collections if they don't exist
+      // Initialize modmail collections if they don't exist (for backward compatibility)
       if (!client.activeModmailThreads) {
         client.activeModmailThreads = new Map();
       }
@@ -102,21 +103,49 @@ module.exports = {
         client.blockedModmailUsers = new Set();
       }
       
-      // Find the thread that corresponds to this channel
-      for (const [id, thread] of client.activeModmailThreads.entries()) {
-        if (thread.channelId === interaction.channel.id) {
-          threadInfo = thread;
-          userId = id;
-          break;
+      // Special case for block/unblock which don't require thread info
+      if (interaction.options.getSubcommand() !== 'block' && interaction.options.getSubcommand() !== 'unblock') {
+        // Find the thread in the database
+        thread = await models.ModmailThread.findByChannel(interaction.channel.id);
+        
+        if (thread) {
+          userId = thread.userId;
+          
+          // Check if thread is also in memory for backward compatibility
+          if (client.activeModmailThreads.has(userId)) {
+            threadInfo = client.activeModmailThreads.get(userId);
+          } else {
+            // If not in memory, create a basic info object
+            threadInfo = {
+              channelId: thread.channelId,
+              userId: thread.userId,
+              userName: thread.userTag,
+              guildId: thread.guildId,
+              status: thread.status,
+              createdAt: new Date(thread.createdAt),
+              lastActivity: new Date(thread.lastActivity)
+            };
+          }
         }
-      }
-      
-      if (!threadInfo && interaction.options.getSubcommand() !== 'block' && interaction.options.getSubcommand() !== 'unblock') {
-        await interaction.reply({
-          embeds: [createErrorEmbed('This channel is not associated with an active modmail thread.', 'Modmail')],
-          ephemeral: true
-        });
-        return;
+        
+        if (!thread) {
+          // As a fallback, try to find in memory
+          for (const [id, memThread] of client.activeModmailThreads.entries()) {
+            if (memThread.channelId === interaction.channel.id) {
+              threadInfo = memThread;
+              userId = id;
+              break;
+            }
+          }
+          
+          if (!threadInfo) {
+            await interaction.reply({
+              embeds: [createErrorEmbed('This channel is not associated with an active modmail thread.', 'Modmail')],
+              ephemeral: true
+            });
+            return;
+          }
+        }
       }
       
       // Handle subcommands
@@ -189,11 +218,26 @@ module.exports = {
    * @param {Object} interaction - Discord interaction
    * @param {Object} client - Discord client
    * @param {String} userId - ID of the user associated with the thread
-   * @param {Object} threadInfo - Thread information
+   * @param {Object} threadInfo - Thread information from memory (may be incomplete)
    */
   async handleClose(interaction, client, userId, threadInfo) {
     try {
       const reason = interaction.options.getString('reason') || 'No reason provided';
+      
+      // Check if the thread exists in the database
+      const thread = await models.ModmailThread.findByChannel(interaction.channel.id);
+      if (!thread) {
+        await interaction.reply({
+          embeds: [createErrorEmbed('This channel is not associated with an active modmail thread in the database.', 'Modmail')],
+          ephemeral: true
+        });
+        return;
+      }
+      
+      // Get user information
+      const userTag = threadInfo ? threadInfo.userName : thread.userTag;
+      const userId = threadInfo ? userId : thread.userId;
+      const createdAt = threadInfo ? threadInfo.createdAt : new Date(thread.createdAt);
       
       // Try to notify the user that the thread is being closed
       try {
@@ -228,7 +272,7 @@ module.exports = {
         fields: [
           {
             name: 'User',
-            value: `${threadInfo.userName} (${userId})`,
+            value: `${userTag} (${userId})`,
             inline: true
           },
           {
@@ -238,7 +282,7 @@ module.exports = {
           },
           {
             name: 'Thread Duration',
-            value: this.getTimeDifference(threadInfo.createdAt, new Date()),
+            value: this.getTimeDifference(createdAt, new Date()),
             inline: true
           }
         ],
@@ -248,24 +292,17 @@ module.exports = {
       
       await interaction.reply({ embeds: [closedEmbed] });
       
-      // Get the directMessageCreate event handler to clear any timers
+      // For backward compatibility - clear any timers in memory
       const directMessageHandler = require('../../events/client/directMessageCreate.js');
       if (directMessageHandler.resetAutoCloseTimer) {
         directMessageHandler.resetAutoCloseTimer(userId, client);
       }
       
-      // Update thread status to closed
-      if (client.activeModmailThreads.has(userId)) {
-        const threadInfo = client.activeModmailThreads.get(userId);
-        threadInfo.status = 'closed';
-        client.activeModmailThreads.set(userId, threadInfo);
-        
-        // Then remove from active threads
-        setTimeout(() => {
-          client.activeModmailThreads.delete(userId);
-        }, 1000); // Small delay to ensure status update is processed
-      } else {
-        // If thread not found, just remove directly
+      // Mark thread as closed in the database
+      await models.ModmailThread.closeThread(interaction.channel.id);
+      
+      // For backward compatibility - clean up memory objects too
+      if (client.activeModmailThreads && client.activeModmailThreads.has(userId)) {
         client.activeModmailThreads.delete(userId);
       }
       
@@ -287,7 +324,7 @@ module.exports = {
         }
       }, 5000);
       
-      logger.info(`Modmail thread with ${threadInfo.userName} (${userId}) closed by ${interaction.user.tag}`);
+      logger.info(`Modmail thread with ${userTag} (${userId}) closed by ${interaction.user.tag}`);
       
     } catch (error) {
       logger.error(`Error closing modmail thread: ${error.message}`);
@@ -310,7 +347,8 @@ module.exports = {
       const reason = interaction.options.getString('reason') || 'No reason provided';
       
       // Check if user is already blocked
-      if (client.blockedModmailUsers.has(user.id)) {
+      const isBlocked = await models.BlockedUser.isUserBlocked(user.id, interaction.guild.id);
+      if (isBlocked) {
         await interaction.reply({
           embeds: [createErrorEmbed(`${user.tag} is already blocked from using modmail.`, 'Modmail')],
           ephemeral: true
@@ -318,7 +356,18 @@ module.exports = {
         return;
       }
       
-      // Add user to blocked list
+      // Add user to blocked list in the database
+      await models.BlockedUser.blockUser(
+        user.id,
+        interaction.user.id,
+        interaction.guild.id,
+        reason
+      );
+      
+      // For backward compatibility, also add to the in-memory collection
+      if (!client.blockedModmailUsers) {
+        client.blockedModmailUsers = new Set();
+      }
       client.blockedModmailUsers.add(user.id);
       
       // Create a confirmation embed
@@ -329,19 +378,11 @@ module.exports = {
       
       await interaction.reply({ embeds: [blockEmbed] });
       
-      // Close any active threads from this user
-      let threadInfo = null;
-      let threadExists = false;
+      // Find any active thread from this user in this guild
+      const activeThreads = await models.ModmailThread.findActiveThreadsByUser(user.id);
+      const threadInCurrentGuild = activeThreads.find(thread => thread.guildId === interaction.guild.id);
       
-      for (const [id, thread] of client.activeModmailThreads.entries()) {
-        if (id === user.id) {
-          threadInfo = thread;
-          threadExists = true;
-          break;
-        }
-      }
-      
-      if (threadExists) {
+      if (threadInCurrentGuild) {
         // Try to notify the user about being blocked
         try {
           const blockedEmbed = createEmbed({
@@ -364,7 +405,7 @@ module.exports = {
         
         // Close and delete the thread's channel
         try {
-          const channel = await interaction.guild.channels.fetch(threadInfo.channelId);
+          const channel = await interaction.guild.channels.fetch(threadInCurrentGuild.channelId);
           
           if (channel) {
             await channel.send({
@@ -401,8 +442,8 @@ module.exports = {
           logger.error(`Error closing thread for blocked user: ${error.message}`);
         }
         
-        // Remove from active threads
-        client.activeModmailThreads.delete(user.id);
+        // Update thread status in database
+        await models.ModmailThread.closeThread(threadInCurrentGuild.channelId);
       }
       
       logger.info(`User ${user.tag} (${user.id}) blocked from modmail by ${interaction.user.tag}`);
@@ -426,8 +467,9 @@ module.exports = {
     try {
       const user = interaction.options.getUser('user');
       
-      // Check if user is actually blocked
-      if (!client.blockedModmailUsers.has(user.id)) {
+      // Check if user is actually blocked in the database
+      const isBlocked = await models.BlockedUser.isUserBlocked(user.id, interaction.guild.id);
+      if (!isBlocked) {
         await interaction.reply({
           embeds: [createErrorEmbed(`${user.tag} is not currently blocked from using modmail.`, 'Modmail')],
           ephemeral: true
@@ -435,8 +477,13 @@ module.exports = {
         return;
       }
       
-      // Remove user from blocked list
-      client.blockedModmailUsers.delete(user.id);
+      // Remove user from blocked list in the database
+      await models.BlockedUser.unblockUser(user.id, interaction.guild.id);
+      
+      // For backward compatibility
+      if (client.blockedModmailUsers) {
+        client.blockedModmailUsers.delete(user.id);
+      }
       
       // Create a confirmation embed
       const unblockEmbed = createSuccessEmbed(
@@ -517,18 +564,25 @@ module.exports = {
         
         await interaction.reply({ embeds: [staffEmbed] });
         
-        // Update thread last activity and reset auto-close timer
-        if (client.activeModmailThreads.has(userId)) {
+        // Find the thread in the database and update its last activity time
+        const thread = await models.ModmailThread.findByChannel(interaction.channel.id);
+        if (thread) {
+          // Update the activity timestamp
+          await models.ModmailThread.updateActivity(interaction.channel.id);
+          logger.info(`Updated last activity time for thread ${interaction.channel.id}`);
+        }
+        
+        // For backward compatibility - update in-memory objects too
+        if (client.activeModmailThreads && client.activeModmailThreads.has(userId)) {
           const threadInfo = client.activeModmailThreads.get(userId);
           threadInfo.lastActivity = new Date();
           client.activeModmailThreads.set(userId, threadInfo);
           
-          // Get the directMessageCreate event handler to reset timers
+          // Get the directMessageCreate event handler to reset timers (no longer needed, but kept for compatibility)
           const directMessageHandler = require('../../events/client/directMessageCreate.js');
           if (directMessageHandler.resetAutoCloseTimer) {
             directMessageHandler.resetAutoCloseTimer(userId, client);
             directMessageHandler.setupAutoCloseTimer(userId, client);
-            logger.info(`Reset auto-close timer for modmail thread with ${user.tag} (${userId})`);
           }
         }
         

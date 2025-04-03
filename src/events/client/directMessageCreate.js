@@ -22,20 +22,19 @@ module.exports = {
       logger.info(`Received DM from ${message.author.tag} (${message.author.id}): ${message.content}`);
       
       // Initialize collections if they don't exist
-      if (!client.activeModmailThreads) {
-        client.activeModmailThreads = new Map();
-      }
-      
       if (!client.pendingModmailMessages) {
         client.pendingModmailMessages = new Map();
       }
       
-      // Check if this is a first-time message
-      const isNewConversation = !client.activeModmailThreads?.has(message.author.id);
+      // Check active threads from the database
+      const activeThreads = await models.ModmailThread.findActiveThreadsByUser(message.author.id);
+      const isNewConversation = activeThreads.length === 0;
       
-      // Check if user is blocked from modmail
-      if (client.blockedModmailUsers && client.blockedModmailUsers.has(message.author.id)) {
+      // Check if user is blocked from modmail in any guild
+      const isBlocked = await models.BlockedUser.isUserBlocked(message.author.id, null);
+      if (isBlocked) {
         logger.info(`Blocked modmail from ${message.author.tag} (${message.author.id})`);
+        
         // Only notify if they haven't been notified recently
         if (!client.notifiedBlockedUsers) {
           client.notifiedBlockedUsers = new Map();
@@ -179,6 +178,14 @@ module.exports = {
    */
   async processModmail(message, client, supportGuild, isNewConversation) {
     try {
+      // Check if user is blocked from this specific guild
+      const isBlockedInGuild = await models.BlockedUser.isUserBlocked(message.author.id, supportGuild.id);
+      if (isBlockedInGuild) {
+        logger.info(`User ${message.author.tag} is blocked from modmail in guild ${supportGuild.name}`);
+        await message.reply(`You are blocked from using modmail in the server **${supportGuild.name}**.`);
+        return;
+      }
+      
       // Get guild settings to check if modmail is enabled
       const guildSettings = await models.Guild.findOrCreateGuild(supportGuild.id);
       
@@ -243,24 +250,13 @@ module.exports = {
             topic: `Modmail thread with ${message.author.tag} (${message.author.id})`
           });
           
-          // Store the thread info
-          client.activeModmailThreads.set(message.author.id, {
-            channelId: threadChannel.id,
+          // Store the thread info in the database
+          const threadData = await models.ModmailThread.createThread({
             userId: message.author.id,
-            userName: message.author.tag,
-            createdAt: new Date(),
-            lastActivity: new Date(),
-            status: 'open',
+            userTag: message.author.tag,
             guildId: supportGuild.id,
-            autoCloseTimer: null,
-            warningsSent: {
-              thirty: false,
-              ten: false
-            }
+            channelId: threadChannel.id
           });
-          
-          // Set up auto-close timer
-          this.setupAutoCloseTimer(message.author.id, client);
           
           // Send initial information to the thread
           const userInfoEmbed = createEmbed({
@@ -331,11 +327,29 @@ module.exports = {
         }
       } else {
         // This is a continuation of an existing conversation
-        const threadInfo = client.activeModmailThreads.get(message.author.id);
-        
-        // Verify the thread still exists
         try {
-          const threadChannel = await supportGuild.channels.fetch(threadInfo.channelId);
+          // Get thread info from database
+          const activeThreads = await models.ModmailThread.findActiveThreadsByUser(message.author.id);
+          
+          // Find the thread for this specific guild
+          const threadForGuild = activeThreads.find(thread => thread.guildId === supportGuild.id);
+          
+          if (!threadForGuild) {
+            // Thread for this guild may have been deleted, create a new one
+            logger.info(`No active thread found for user ${message.author.tag} in guild ${supportGuild.name}, creating new one`);
+            await this.processModmail(message, client, supportGuild, true);
+            return;
+          }
+          
+          const threadChannel = await supportGuild.channels.fetch(threadForGuild.channelId).catch(() => null);
+          
+          if (!threadChannel) {
+            // Channel was deleted, remove from database and create new one
+            await models.ModmailThread.closeThread(threadForGuild.channelId);
+            logger.info(`Thread channel ${threadForGuild.channelId} no longer exists, creating new one`);
+            await this.processModmail(message, client, supportGuild, true);
+            return;
+          }
           
           // Forward the message to the thread
           const messageEmbed = createEmbed({
@@ -362,21 +376,10 @@ module.exports = {
           // Send a simple acknowledgement
           await message.react('✅');
           
-          // Update last activity time and reset auto-close timer
-          threadInfo.lastActivity = new Date();
-          
-          // Clear any existing timer and reset warnings
-          this.resetAutoCloseTimer(message.author.id, client);
-          
-          // Set up new auto-close timer
-          this.setupAutoCloseTimer(message.author.id, client);
-          
+          // Update last activity time
+          await models.ModmailThread.updateActivity(threadChannel.id);
         } catch (error) {
           logger.error(`Error forwarding message to modmail thread: ${error.message}`);
-          
-          // The thread might have been deleted, create a new one
-          client.activeModmailThreads.delete(message.author.id);
-          
           // Re-run this function to create a new thread
           await this.processModmail(message, client, supportGuild, true);
         }
@@ -390,140 +393,25 @@ module.exports = {
   
   /**
    * Set up auto-close timer for a modmail thread
-   * @param {String} userId - User ID associated with the thread
-   * @param {Object} client - Discord client instance
+   * This is now a no-op as we use the database with the findIdleThreads method 
+   * for thread auto-closure, which is more reliable in a sharded environment
+   * @param {String} userId - User ID associated with the thread (not used)
+   * @param {Object} client - Discord client instance (not used)
    */
   setupAutoCloseTimer(userId, client) {
-    const threadInfo = client.activeModmailThreads.get(userId);
-    if (!threadInfo) return;
-    
-    // Clear any existing timer
-    if (threadInfo.autoCloseTimer) {
-      clearTimeout(threadInfo.autoCloseTimer);
-    }
-    
-    // Auto-close after 24 hours of inactivity
-    const idleTimeout = 24 * 60 * 60 * 1000; // 24 hours
-    
-    threadInfo.autoCloseTimer = setTimeout(async () => {
-      try {
-        const guild = client.guilds.cache.get(threadInfo.guildId);
-        if (!guild) return;
-        
-        const threadChannel = await guild.channels.fetch(threadInfo.channelId).catch(() => null);
-        if (!threadChannel) {
-          // Channel no longer exists, remove thread from tracking
-          client.activeModmailThreads.delete(userId);
-          return;
-        }
-        
-        // Close the thread
-        await threadChannel.send({
-          embeds: [
-            createEmbed({
-              title: '🔒 Thread Auto-Closed',
-              description: 'This modmail thread has been automatically closed due to 24 hours of inactivity.',
-              color: '#FF5555',
-              timestamp: true
-            })
-          ]
-        });
-        
-        // Archive or rename the channel
-        await threadChannel.setName(`closed-${threadChannel.name}`);
-        
-        // Remove from active threads
-        client.activeModmailThreads.delete(userId);
-        
-        logger.info(`Auto-closed modmail thread for ${threadInfo.userName} after 24 hours of inactivity.`);
-      } catch (error) {
-        logger.error(`Error auto-closing modmail thread: ${error.message}`);
-      }
-    }, idleTimeout);
-    
-    // Set warning timers (30 minutes and 10 minutes before closing)
-    setTimeout(async () => {
-      try {
-        const currentInfo = client.activeModmailThreads.get(userId);
-        if (!currentInfo || currentInfo.warningsSent.thirty) return;
-        
-        const guild = client.guilds.cache.get(currentInfo.guildId);
-        if (!guild) return;
-        
-        const threadChannel = await guild.channels.fetch(currentInfo.channelId).catch(() => null);
-        if (!threadChannel) return;
-        
-        // Send warning
-        await threadChannel.send({
-          embeds: [
-            createEmbed({
-              title: '⚠️ Inactivity Warning',
-              description: 'This modmail thread will be automatically closed in 30 minutes due to inactivity.',
-              color: '#FFA500',
-              timestamp: true
-            })
-          ]
-        });
-        
-        // Mark warning as sent
-        currentInfo.warningsSent.thirty = true;
-      } catch (error) {
-        logger.error(`Error sending 30-minute warning: ${error.message}`);
-      }
-    }, idleTimeout - (30 * 60 * 1000)); // 30 minutes before timeout
-    
-    // Ten minute warning
-    setTimeout(async () => {
-      try {
-        const currentInfo = client.activeModmailThreads.get(userId);
-        if (!currentInfo || currentInfo.warningsSent.ten) return;
-        
-        const guild = client.guilds.cache.get(currentInfo.guildId);
-        if (!guild) return;
-        
-        const threadChannel = await guild.channels.fetch(currentInfo.channelId).catch(() => null);
-        if (!threadChannel) return;
-        
-        // Send warning
-        await threadChannel.send({
-          embeds: [
-            createEmbed({
-              title: '⚠️ Final Warning',
-              description: 'This modmail thread will be automatically closed in 10 minutes due to inactivity.',
-              color: '#FF5555',
-              timestamp: true
-            })
-          ]
-        });
-        
-        // Mark warning as sent
-        currentInfo.warningsSent.ten = true;
-      } catch (error) {
-        logger.error(`Error sending 10-minute warning: ${error.message}`);
-      }
-    }, idleTimeout - (10 * 60 * 1000)); // 10 minutes before timeout
+    // No longer needed as we'll use a database-driven approach
+    // This function is kept for backward compatibility with existing code
   },
   
   /**
    * Reset auto-close timer for a modmail thread
-   * @param {String} userId - User ID associated with the thread
-   * @param {Object} client - Discord client instance
+   * This is now a no-op as we use the database for tracking thread activity
+   * @param {String} userId - User ID associated with the thread (not used)
+   * @param {Object} client - Discord client instance (not used)
    */
   resetAutoCloseTimer(userId, client) {
-    const threadInfo = client.activeModmailThreads.get(userId);
-    if (!threadInfo) return;
-    
-    // Clear existing timer
-    if (threadInfo.autoCloseTimer) {
-      clearTimeout(threadInfo.autoCloseTimer);
-      threadInfo.autoCloseTimer = null;
-    }
-    
-    // Reset warning flags
-    threadInfo.warningsSent = {
-      thirty: false,
-      ten: false
-    };
+    // No longer needed as we'll use a database-driven approach
+    // This function is kept for backward compatibility with existing code
   },
   
   /**
