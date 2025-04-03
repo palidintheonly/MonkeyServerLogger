@@ -10,6 +10,12 @@ const { logger } = require('./utils/logger');
 const fs = require('fs');
 const path = require('path');
 
+// Map DISCORD_APPLICATION_ID to CLIENT_ID if it exists
+if (process.env.DISCORD_APPLICATION_ID && !process.env.CLIENT_ID) {
+  process.env.CLIENT_ID = process.env.DISCORD_APPLICATION_ID;
+  logger.info('Using DISCORD_APPLICATION_ID as CLIENT_ID');
+}
+
 // Check if bot token is available
 if (!process.env.DISCORD_BOT_TOKEN) {
   logger.error('Missing DISCORD_BOT_TOKEN environment variable');
