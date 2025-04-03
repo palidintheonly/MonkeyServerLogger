@@ -1,11 +1,13 @@
 /**
- * Discord Modmail Bot - Production Entry Point
+ * MonkeyBytes Discord Modmail Bot - Production Entry Point
+ * Version 2.0.0 - The Royal Court
  * 
  * This is the production entry point that loads the main bot file.
  * It contains basic error handling and restart logic for production use.
  */
 const fs = require('fs');
 const path = require('path');
+const { version, name, codename, company, slogan } = require('./src/version');
 
 // Create logs directory if it doesn't exist
 const logsDir = path.join(process.cwd(), 'logs');
@@ -23,12 +25,13 @@ let restartCount = 0;
 let lastRestartTime = 0;
 
 function startBot() {
-  console.log('Starting Discord Modmail Bot...');
+  console.log(`Starting ${name} v${version} (${codename})...`);
+  console.log(`${company} presents: ${slogan}`);
   
   try {
     // Load the main bot code
     const bot = require('./src/index.js');
-    console.log('Bot loaded successfully');
+    console.log(`${company} Bot v${version} loaded successfully`);
   } catch (error) {
     handleError(error);
   }

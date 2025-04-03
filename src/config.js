@@ -1,7 +1,8 @@
 /**
- * Configuration settings for the Modmail Bot
+ * Configuration settings for the MonkeyBytes Modmail Bot
  */
 require('dotenv').config();
+const { version } = require('../version');
 
 module.exports = {
   /**
@@ -9,9 +10,11 @@ module.exports = {
    */
   bot: {
     // Meta information
-    name: 'Modmail Bot',
-    version: '1.0.0',
-    description: 'A Discord modmail bot for cross-server communication',
+    name: 'MonkeyBytes Modmail Bot',
+    company: 'MonkeyBytes',
+    slogan: 'The Royal Court',
+    version: version,
+    description: 'A Discord modmail bot by MonkeyBytes for cross-server communication',
     
     // Links
     supportServer: process.env.SUPPORT_SERVER || '',

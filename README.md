@@ -1,130 +1,115 @@
-# Monkey Bytes Discord Bot 👑
+# MonkeyBytes Discord Modmail Bot 📬
 
-A comprehensive Discord logging and moderation bot for "The Royal Court" that tracks all server activities with configurable categories and channels.
+**Version 2.0.0 - The Royal Court**
+
+A dedicated Discord modmail bot by MonkeyBytes that enables users to contact server staff through direct messages, with support for multiple servers and comprehensive moderation tools.
 
 ## Features
 
-### 📝 Comprehensive Logging
+### 📬 Modmail System
 
-The bot logs all server activities including:
-- **Messages**: Creations, edits, and deletions
-- **Members**: Joins, leaves, and updates
-- **Voice**: Voice channel activity
-- **Roles**: Creations, deletions, and updates
-- **Channels**: Creations, deletions, and updates
-- **Server**: Server-wide events and setting changes
+- **Cross-Server Support**: Users can contact any server where modmail is enabled
+- **Server Selection**: If a user is in multiple servers with modmail enabled, they can select which server to contact
+- **Thread Management**: Staff can reply to, close, and generate transcripts of modmail conversations
+- **User Experience**: Clean, intuitive interface for users to communicate with server staff
 
 ### ⚙️ Commands
 
-#### Setup Command
-- `/setup`: Initialize the bot for your server (restricted to server owners and administrators)
-  - Creates a logging channel
-  - Configures which log categories to enable
-  - Sets up the logging system
-  - Optional modmail setup
+#### Admin Commands
+- `/modmail-setup`: Configure modmail for your server
+  - Enable/disable the modmail system
+  - Set up custom welcome messages
+  - Configure modmail channels and categories
 
-#### Management Commands
-- `/enable`: Enable specific logging categories
-- `/disable`: Disable specific logging categories
-- `/ignore`: Configure channels or roles to be ignored by the logging system
-- `/categories`: View and manage logging categories
-- `/logs`: Configure logging channels for different categories
-- `/modmail`: Manage modmail threads (reply, close, block, unblock)
+- `/modmail-stats`: View statistics about modmail usage
+  - Overview of active and closed threads
+  - Usage statistics by timeframe
+  - User engagement metrics
 
-#### Information Commands
-- `/help`: Display help information and command usage
+- `/status`: Display bot status information
+  - Uptime and performance metrics
+  - Memory usage and response times
+  - Server connectivity information
+
+#### General Commands
+- `/guilds`: View a list of servers where you can use modmail
+- `/help`: Get information about available commands
+- `/info`: View information about the bot
 - `/ping`: Check the bot's latency
-- `/stats`: View bot statistics
 
-### 📬 Modmail System
+### 🛡️ Safety & Privacy
 
-The bot includes a modmail system that allows server members to contact staff through direct messages:
-
-- **Server Selection**: If a user is in multiple servers with modmail enabled, they will be prompted to select which server they want to contact
-- **Auto-Closing**: Modmail threads automatically close after 1 minute of inactivity
-- **Inactivity Warnings**: Users and staff receive warnings at 30 seconds and 10 seconds before a thread is closed
-- **Closure Notification**: Users are notified when their thread is closed
-- **Staff Control**: Staff can reply to modmail threads, close them manually, and block/unblock users
-
-### 🔧 Configuration Options
-
-- **Per-Category Logging**: Direct different event types to separate channels
-- **Ignore Filters**: Exclude specific channels or roles from logging
-- **Customizable Permissions**: Limit access to log commands
-- **Modmail Settings**: Enable/disable modmail functionality per server
+- **Data Protection**: All conversations are stored securely
+- **Transcript Generation**: Staff can generate HTML transcripts of conversations
+- **Automated Backups**: Regular database backups to prevent data loss
 
 ## Setup Instructions
 
-1. **Invite the Bot**: Use the invitation link provided in the server
-2. **Run the Setup Command**: Use `/setup` to initialize the bot
-3. **Configure Categories**: Select which log categories to enable
-4. **Set Up Channels**: Optionally configure separate channels for different log categories
-5. **Set Ignore Rules**: Configure channels or roles to ignore if needed
-6. **Enable Modmail**: Enable the modmail system if desired during setup or later using the setup command
+1. **Invite the Bot**: Use the official invitation link
+2. **Run the Setup Command**: Use `/modmail-setup enable` to initialize modmail
+3. **Configure Settings**: Customize your modmail experience
+4. **Inform Your Members**: Let your server members know they can contact staff via DM
 
 ## Command Usage Examples
 
-### Setup
+### Setting Up Modmail
 ```
-/setup
+/modmail-setup enable
 ```
-Follow the interactive prompts to configure the bot.
 
-### Managing Log Channels
+### Checking Modmail Status
 ```
-/logs setchannel [category] [channel]
+/modmail-setup status
 ```
-Example: `/logs setchannel messages #message-logs`
 
-### Ignoring Channels
+### Viewing Modmail Statistics
 ```
-/ignore channel [channel]
+/modmail-stats overview
 ```
-Example: `/ignore channel #bot-commands`
 
-### View Command Help
+### Checking Bot Status
 ```
-/help [command]
+/status
 ```
-Example: `/help logs`
 
-### Modmail Commands
-```
-/modmail reply [message]
-/modmail close [reason]
-/modmail block [user] [reason]
-/modmail unblock [user]
-```
-Example: `/modmail reply Thanks for contacting us!`
+## Technical Information
 
-## Hosting Information
+The bot is built with modern technologies for reliability and performance:
 
-The bot is hosted on Replit for 24/7 uptime. It uses a SQLite database to store server configurations and settings.
+### Core Technologies
+- **Node.js & Discord.js v14**: Latest Discord API features and optimizations
+- **SQLite Database**: Efficient and reliable data storage with automated backups
+- **Custom Embed Builder**: Professional and consistent message formatting
+- **Winston Logger**: Comprehensive logging for troubleshooting and monitoring
 
-## Technical Details
+### Recent Improvements
+- **Enhanced Database Reliability**: Fixed circular reference handling in Guild model
+- **API Compatibility**: Updated to latest Discord.js interaction patterns
+- **Deprecation Fixes**: Replaced deprecated API calls with current standards
+- **Robust Error Handling**: Improved error recovery and exception management
 
-- Built with Node.js and Discord.js v14
-- Event-driven architecture for efficient event handling
-- Custom embed builder for consistent message formatting
-- Winston logger for internal logging
-- Auto-scaling with Discord.js Sharding Manager
+### Data Security
+- **Automated Backups**: Regular database backups performed every 24 hours
+- **Safe Deepmerge Implementation**: Prevents stack overflow with circular references
+- **Input Validation**: Comprehensive validation on all user inputs
+- **Error Recovery**: Graceful handling of API errors and rate limits
 
-### Auto-Scaling Capabilities
+## Deployment
 
-The bot implements Discord.js Sharding Manager to efficiently scale across multiple servers:
-- Custom sharding strategy that creates 1 shard for every guild (Discord-recommended approach)
-- Optimal performance with dedicated resources per server
-- Distributes server load across multiple processes
-- Maintains performance as the bot grows in popularity
-- Implements robust retry mechanism with exponential backoff for API rate limits
-- Enhanced error handling and recovery for Discord API connections
-- Collects and aggregates stats across all shards
-- Handles inter-shard communication for global statistics
+The bot is hosted on Replit for 24/7 uptime with automated monitoring and restart capabilities.
 
 ## Support
 
-For support or questions, contact the Monkey Bytes team.
+For support or questions about the bot, contact the development team through Discord.
+
+## Contributing
+
+Contributions are welcome! Please see the [CHANGELOG.md](CHANGELOG.md) for recent updates.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ---
 
-© 2025 Monkey Bytes - The Royal Court. All rights reserved.
+© 2025 MonkeyBytes - The Royal Court. Released under MIT License.

@@ -1,9 +1,10 @@
 /**
  * Discord.js Ready Event
+ * MonkeyBytes - The Royal Court
  */
 const { Events, ActivityType, REST, Routes } = require('discord.js');
 const { logger } = require('../utils/logger');
-const { commands: cmdConfig } = require('../config');
+const { commands: cmdConfig, bot } = require('../config');
 
 module.exports = {
   name: Events.ClientReady,

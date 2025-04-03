@@ -22,10 +22,41 @@ function convertEphemeralOption(options) {
     delete newOptions.ephemeral;
   }
   
+  // If fetchReply is present, remove it (we'll handle manually with fetchReply method)
+  if (newOptions.fetchReply !== undefined) {
+    delete newOptions.fetchReply;
+  }
+  
   return newOptions;
+}
+
+/**
+ * Handles the reply/deferReply with proper response handling
+ * @param {Interaction} interaction - The Discord interaction
+ * @param {Object} options - Reply options 
+ * @param {boolean} [needsResponse=false] - Whether we need the response object
+ * @returns {Promise<Message|InteractionResponse|null>} The response if needed
+ */
+async function safeReply(interaction, options, needsResponse = false) {
+  // Clean up any deprecated options
+  const cleanOptions = convertEphemeralOption(options);
+  
+  try {
+    await interaction.reply(cleanOptions);
+    
+    // Return the response if needed
+    if (needsResponse) {
+      return await interaction.fetchReply();
+    }
+    return null;
+  } catch (error) {
+    console.error(`Error in safeReply: ${error.message}`);
+    return null;
+  }
 }
 
 module.exports = {
   EPHEMERAL_FLAG,
-  convertEphemeralOption
+  convertEphemeralOption,
+  safeReply
 };

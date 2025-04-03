@@ -14,7 +14,8 @@ module.exports = {
   
   async execute(interaction, client) {
     // Calculate bot and API latency
-    const sent = await interaction.deferReply({ fetchReply: true });
+    await interaction.deferReply();
+    const sent = await interaction.fetchReply();
     const botLatency = sent.createdTimestamp - interaction.createdTimestamp;
     const apiLatency = Math.round(client.ws.ping);
     
