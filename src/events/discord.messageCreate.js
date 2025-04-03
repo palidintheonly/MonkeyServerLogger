@@ -59,7 +59,7 @@ module.exports = {
         const queryParams = {
           where: {
             userId: message.author.id,
-            open: true
+            open: true  // Only get threads that are still open
           }
         };
         
@@ -105,6 +105,14 @@ async function handleExistingThreads(message, client, existingThreads) {
     // If there's only one thread, forward the message to that thread
     if (existingThreads.length === 1) {
       const thread = existingThreads[0];
+      
+      // Check if the thread is already closed - prevent further messages
+      if (!thread.open) {
+        logger.info(`User ${message.author.id} attempted to send message to closed thread ${thread.id}`);
+        return message.reply({
+          content: "This modmail thread has been closed by staff. If you need further assistance, please send a new message to start a new thread."
+        });
+      }
       
       // Get the guild
       const guild = client.guilds.cache.get(thread.guildId);
@@ -281,6 +289,14 @@ async function handleExistingThreads(message, client, existingThreads) {
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
     
     if (mostRecentThread && new Date(mostRecentThread.lastMessageAt) > oneHourAgo) {
+      // Check if the thread is already closed - prevent further messages
+      if (!mostRecentThread.open) {
+        logger.info(`User ${message.author.id} attempted to send message to closed thread ${mostRecentThread.id}`);
+        return message.reply({
+          content: "This modmail thread has been closed by staff. If you need further assistance, please send a new message to start a new thread."
+        });
+      }
+      
       // Use the most recently active thread automatically
       logger.info(`Using most recently active thread ${mostRecentThread.id} for user ${message.author.id}`);
       

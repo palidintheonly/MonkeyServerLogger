@@ -643,12 +643,18 @@ async function handleModmailClose(interaction, client) {
       ]
     });
     
-    // Try to notify the user
+    // Try to notify the user that thread is closed and they cannot reply anymore
     try {
       const user = await client.users.fetch(thread.userId);
       await user.send({
-        content: `📬 Your modmail thread with **${interaction.guild.name}** has been closed by a staff member.`
+        content: `📬 Your modmail thread with **${interaction.guild.name}** has been closed by a staff member.\n\n**Note:** This conversation is now closed. If you reply to this message, it will create a new thread instead of continuing this one. If you need further assistance, please send a new message.`
       });
+      
+      // Remove the user from active sessions to prevent replying to closed threads
+      if (client.userSessions && client.userSessions.has(thread.userId)) {
+        client.userSessions.delete(thread.userId);
+        logger.debug(`Deleted user session for ${thread.userId} due to thread closure`);
+      }
     } catch (dmError) {
       // If we can't DM the user, just log it
       logger.warn(`Could not notify user ${thread.userId} about thread closure: ${dmError.message}`);
