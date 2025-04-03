@@ -240,7 +240,23 @@ async function handleNewModmail(message, client) {
         where: { guildId: guildId },
         defaults: { 
           guildId: guildId,
-          guildName: guild.name 
+          guildName: guild.name,
+          // Required fields from the schema
+          enabledCategories: '[]',
+          setupCompleted: false,
+          modmailEnabled: false,
+          ignoredChannels: '[]',
+          ignoredRoles: '[]',
+          categoryChannels: '{}',
+          setupProgress: JSON.stringify({ step: 0, lastUpdated: null }),
+          setupData: '{}',
+          settings: {
+            guildName: guild.name,
+            disabledCommands: [],
+            modmail: {
+              enabled: false
+            }
+          }
         }
       });
       

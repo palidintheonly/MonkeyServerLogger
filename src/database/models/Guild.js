@@ -36,16 +36,55 @@ module.exports = (sequelize) => {
                   enabled: false
                 }
               }),
-              // Required fields from the schema
+              // Required fields from the schema (ensure they match model defaults)
               enabledCategories: '[]',
               setupCompleted: false,
-              modmailEnabled: false
+              modmailEnabled: false,
+              ignoredChannels: '[]',
+              ignoredRoles: '[]',
+              categoryChannels: '{}',
+              setupProgress: JSON.stringify({ step: 0, lastUpdated: null }),
+              setupData: '{}'
             }
           };
         } else {
-          // New style: already in correct format
-          queryOptions = options;
+          // New style: already in correct format, but ensure it has defaults
+          queryOptions = { ...options };
           guildId = options.where?.guildId || 'unknown';
+          
+          // Make sure defaults is present and contains required fields
+          if (!queryOptions.defaults) {
+            queryOptions.defaults = {};
+          }
+          
+          // Add required default fields if not already specified
+          if (!queryOptions.defaults.enabledCategories) {
+            queryOptions.defaults.enabledCategories = '[]';
+          }
+          if (!queryOptions.defaults.ignoredChannels) {
+            queryOptions.defaults.ignoredChannels = '[]';  
+          }
+          if (!queryOptions.defaults.ignoredRoles) {
+            queryOptions.defaults.ignoredRoles = '[]';
+          }
+          if (!queryOptions.defaults.categoryChannels) {
+            queryOptions.defaults.categoryChannels = '{}';
+          }
+          if (queryOptions.defaults.setupProgress === undefined) {
+            queryOptions.defaults.setupProgress = JSON.stringify({ step: 0, lastUpdated: null });
+          }
+          if (queryOptions.defaults.setupData === undefined) {
+            queryOptions.defaults.setupData = '{}';
+          }
+          if (queryOptions.defaults.setupCompleted === undefined) {
+            queryOptions.defaults.setupCompleted = false;
+          }
+          if (queryOptions.defaults.modmailEnabled === undefined) {
+            queryOptions.defaults.modmailEnabled = false;
+          }
+          if (queryOptions.defaults.verboseLoggingEnabled === undefined) {
+            queryOptions.defaults.verboseLoggingEnabled = false;
+          }
         }
         
         // Log the query for debugging
@@ -370,7 +409,8 @@ module.exports = (sequelize) => {
     },
     enabledCategories: {
       type: DataTypes.TEXT,
-      allowNull: false
+      allowNull: false,
+      defaultValue: '[]'
     },
     setupCompleted: {
       type: DataTypes.BOOLEAN,
