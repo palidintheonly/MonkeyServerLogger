@@ -58,8 +58,19 @@ module.exports = {
                    customId === 'cancel-clear-modmail' ||
                    customId === 'confirm-clear-all' ||
                    customId === 'cancel-clear-all') {
-            // These are handled by the command's collector
-            // We don't need to do anything here
+            // Try to find and use the command's handleButton method
+            try {
+              const clearDatabaseCommand = client.commands.get('clear-database');
+              if (clearDatabaseCommand && typeof clearDatabaseCommand.handleButton === 'function') {
+                const handled = await clearDatabaseCommand.handleButton(interaction, client);
+                if (handled) {
+                  // If the command handled the button, we're done
+                  return;
+                }
+              }
+            } catch (error) {
+              logger.error(`Error handling clear-database button: ${error.message}`, { error });
+            }
           }
           // Handle any other button/select menu interactions
           else {

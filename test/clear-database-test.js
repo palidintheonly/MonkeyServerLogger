@@ -70,17 +70,20 @@ async function simulateButtonClick(interaction, buttonId) {
     update: async (data) => {
       logger.debug('Button Update Called with:', data);
       return data;
+    },
+    editReply: async (data) => {
+      logger.debug('Button EditReply Called with:', data);
+      return data;
     }
   };
   
-  // Find and call the appropriate collector callback
-  const subcommand = interaction.options.getSubcommand();
-  if (mockClient._collectors && mockClient._collectors[subcommand]) {
-    await mockClient._collectors[subcommand](buttonInteraction);
-    return true;
-  }
+  logger.info(`Simulating button click: ${buttonId}`);
   
-  return false;
+  // Use our command's handleButton method directly
+  const handled = await clearDatabaseCommand.handleButton(buttonInteraction, mockClient);
+  logger.info(`Button handled: ${handled}`);
+  
+  return buttonInteraction;
 }
 
 // Test the guild subcommand

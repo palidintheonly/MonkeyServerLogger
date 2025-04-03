@@ -438,8 +438,147 @@ module.exports = {
    */
   async handleButton(interaction, client) {
     try {
-      // Button handling is implemented in the execute methods above
-      // This is just a placeholder in case we need additional button handling
+      const customId = interaction.customId;
+      
+      // Handle guild clear cancel button
+      if (customId === 'cancel-clear-guild') {
+        await interaction.update({
+          embeds: [createInfoEmbed('Guild deletion cancelled.')],
+          components: []
+        });
+        return true;
+      }
+      
+      // Handle guild clear confirm button
+      if (customId.startsWith('confirm-clear-guild-')) {
+        const guildId = customId.replace('confirm-clear-guild-', '');
+        
+        // Find the guild in the database
+        const guild = await client.db.Guild.findByPk(guildId);
+        
+        if (!guild) {
+          await interaction.update({
+            embeds: [createErrorEmbed(`Guild with ID ${guildId} not found.`)],
+            components: []
+          });
+          return true;
+        }
+        
+        const guildName = guild.guildName || `Guild ${guildId}`;
+        
+        try {
+          // Delete the guild from the database
+          await guild.destroy();
+          await interaction.update({
+            embeds: [createSuccessEmbed(`Successfully deleted all data for guild **${guildName}**.`)],
+            components: []
+          });
+        } catch (error) {
+          logger.error(`Error deleting guild ${guildId}: ${error.message}`, { error });
+          await interaction.update({
+            embeds: [createErrorEmbed(`An error occurred while deleting the guild: ${error.message}`)],
+            components: []
+          });
+        }
+        return true;
+      }
+      
+      // Handle modmail clear cancel button
+      if (customId === 'cancel-clear-modmail') {
+        await interaction.update({
+          embeds: [createInfoEmbed('Modmail deletion cancelled.')],
+          components: []
+        });
+        return true;
+      }
+      
+      // Handle modmail clear confirm button
+      if (customId === 'confirm-clear-modmail') {
+        try {
+          // Get count first for the message
+          const count = await client.db.ModmailThread.count();
+          
+          // Delete all modmail threads
+          await client.db.ModmailThread.destroy({ where: {} });
+          await interaction.update({
+            embeds: [createSuccessEmbed(`Successfully deleted all ${count} modmail threads.`)],
+            components: []
+          });
+        } catch (error) {
+          logger.error(`Error deleting modmail threads: ${error.message}`, { error });
+          await interaction.update({
+            embeds: [createErrorEmbed(`An error occurred while deleting modmail threads: ${error.message}`)],
+            components: []
+          });
+        }
+        return true;
+      }
+      
+      // Handle all clear cancel button
+      if (customId === 'cancel-clear-all') {
+        await interaction.update({
+          embeds: [createInfoEmbed('Database reset cancelled.')],
+          components: []
+        });
+        return true;
+      }
+      
+      // Handle all clear confirm button
+      if (customId === 'confirm-clear-all') {
+        try {
+          // Create a processing message
+          await interaction.update({
+            embeds: [createInfoEmbed('Processing database reset...')],
+            components: []
+          });
+          
+          // Get a list of all tables
+          const tableResults = await sequelize.query(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';",
+            { type: sequelize.QueryTypes.SELECT }
+          );
+          
+          const tables = tableResults.map(result => result.name);
+          
+          // Clear each table using TRUNCATE (for SQLite this is DELETE FROM)
+          for (const table of tables) {
+            // Skip SequelizeMeta table if it exists (used for migrations)
+            if (table === 'SequelizeMeta') {
+              logger.info(`Skipping migration table: ${table}`);
+              continue;
+            }
+            
+            logger.info(`Clearing table: ${table}`);
+            await sequelize.query(`DELETE FROM "${table}";`);
+            
+            // Reset SQLite sequences if they exist
+            try {
+              await sequelize.query(`DELETE FROM sqlite_sequence WHERE name='${table}';`);
+            } catch (seqError) {
+              // Ignore errors for tables without auto-increment
+              logger.debug(`Note: Could not reset sequence for ${table}: ${seqError.message}`);
+            }
+          }
+          
+          await interaction.editReply({
+            embeds: [createSuccessEmbed(
+              `Successfully reset the entire database.\n` +
+              `All ${tables.length} tables have been cleared.`,
+              'Database Reset Complete'
+            )],
+            components: []
+          });
+        } catch (error) {
+          logger.error(`Error clearing all tables: ${error.message}`, { error });
+          await interaction.editReply({
+            embeds: [createErrorEmbed(`An error occurred while resetting the database: ${error.message}`)],
+            components: []
+          });
+        }
+        return true;
+      }
+      
+      // If we reached here, the button wasn't handled
       return false;
     } catch (error) {
       logger.error(`Error handling button in clear-database: ${error.message}`, { error });

@@ -125,6 +125,9 @@ module.exports = {
     guildSettings.modmailCategoryId = category.id;
     await guildSettings.save();
     
+    // Make sure settings are synchronized
+    await guildSettings.syncModmailSettings();
+    
     // Set category permissions to be private but accessible by staff role
     try {
       // Remove view permission for @everyone
@@ -190,6 +193,9 @@ module.exports = {
     // Also update the dedicated column to keep them in sync
     guildSettings.modmailEnabled = false;
     await guildSettings.save();
+    
+    // Make sure settings are synchronized
+    await guildSettings.syncModmailSettings();
     
     // Send success message
     await interaction.editReply({
@@ -260,21 +266,37 @@ module.exports = {
     // Log the values for debugging
     console.log(`Guild ${interaction.guild.name} (${interaction.guild.id}) modmail enabled - JSON: ${jsonEnabled}, Column: ${columnEnabled}`);
     
-    // If either source shows that modmail is disabled, treat it as disabled
-    if (!jsonEnabled || !columnEnabled) {
-      // Show a detailed message about the inconsistency if there is one
-      let disabledMessage = 'The modmail system is currently **disabled** for this server.\n\n' +
-                           'Use `/modmail-setup enable` to set it up.';
+    // Check for inconsistencies and fix them if found
+    if (jsonEnabled !== columnEnabled) {
+      logger.info(`Found inconsistent modmail settings in guild ${interaction.guild.id} during status check. Fixing...`);
       
-      // If the settings are inconsistent, add a note about it
-      if (jsonEnabled !== columnEnabled) {
-        disabledMessage += '\n\n⚠️ **Note:** There appears to be an inconsistency in your modmail settings. ' +
-                          'Running the `/modmail-setup enable` command again will fix this issue.';
+      // Try to synchronize settings
+      await guildSettings.syncModmailSettings();
+      
+      // Refresh settings after sync
+      const updatedSettings = guildSettings.getSetting('modmail') || {};
+      const updatedJsonEnabled = updatedSettings.enabled === true;
+      const updatedColumnEnabled = guildSettings.modmailEnabled === true;
+      
+      // If still inconsistent or disabled, return disabled message
+      if (updatedJsonEnabled !== updatedColumnEnabled || (!updatedJsonEnabled || !updatedColumnEnabled)) {
+        return interaction.editReply({
+          embeds: [createInfoEmbed(
+            'The modmail system is currently **disabled** for this server.\n\n' +
+            'Use `/modmail-setup enable` to set it up.\n\n' +
+            '⚠️ **Note:** There was an inconsistency in your modmail settings that has been fixed.',
+            'Modmail Status'
+          )]
+        });
       }
       
+      // Otherwise, continue with enabled status (settings fixed)
+    } else if (!jsonEnabled || !columnEnabled) {
+      // Both settings are consistent but show disabled
       return interaction.editReply({
         embeds: [createInfoEmbed(
-          disabledMessage,
+          'The modmail system is currently **disabled** for this server.\n\n' +
+          'Use `/modmail-setup enable` to set it up.',
           'Modmail Status'
         )]
       });

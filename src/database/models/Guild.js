@@ -286,6 +286,52 @@ module.exports = (sequelize) => {
      * @param {string} commandName - The command to check
      * @returns {boolean} - Whether the command is disabled
      */
+    /**
+     * Synchronize modmail settings between JSON and column
+     * @returns {Promise<boolean>} - Whether any changes were made
+     */
+    async syncModmailSettings() {
+      try {
+        // Extract settings from both sources
+        const modmailSettings = this.getSetting('modmail') || {};
+        const jsonEnabled = modmailSettings.enabled === true;
+        const columnEnabled = this.modmailEnabled === true;
+        
+        // If settings are already consistent, no changes needed
+        if (jsonEnabled === columnEnabled) {
+          return false;
+        }
+        
+        logger.info(`Fixing inconsistent modmail settings for guild ${this.guildId} - JSON: ${jsonEnabled}, Column: ${columnEnabled}`);
+        
+        // Determine which setting to use as the source of truth
+        // Strategy: Use the JSON settings as source of truth if it exists,
+        // otherwise use the column value
+        const useEnabled = modmailSettings.hasOwnProperty('enabled') ? jsonEnabled : columnEnabled;
+        
+        // Update both settings
+        if (useEnabled !== jsonEnabled) {
+          await this.updateSettings({
+            modmail: {
+              ...modmailSettings,
+              enabled: useEnabled
+            }
+          });
+        }
+        
+        if (useEnabled !== columnEnabled) {
+          this.modmailEnabled = useEnabled;
+          await this.save();
+        }
+        
+        logger.info(`Successfully synchronized modmail settings for guild ${this.guildId} to: ${useEnabled}`);
+        return true;
+      } catch (error) {
+        logger.error(`Error synchronizing modmail settings for guild ${this.guildId}: ${error.message}`);
+        throw error;
+      }
+    }
+    
     isCommandDisabled(commandName) {
       try {
         const disabledCommands = this.getSetting('disabledCommands') || [];

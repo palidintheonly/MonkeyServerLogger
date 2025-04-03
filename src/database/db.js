@@ -6,6 +6,7 @@ const { database: dbConfig } = require('../config');
 const { logger } = require('../utils/logger');
 const fs = require('fs');
 const path = require('path');
+const databaseBackup = require('../utils/database-backup');
 
 // Create the main Sequelize instance
 const sequelize = new Sequelize({
@@ -111,11 +112,6 @@ async function connectToDatabase() {
 function scheduleBackups() {
   const backupInterval = dbConfig.backups.interval || 86400000; // Default 24 hours
   
-  // Ensure backup directory exists
-  if (!fs.existsSync(dbConfig.backups.path)) {
-    fs.mkdirSync(dbConfig.backups.path, { recursive: true });
-  }
-  
   // Schedule first backup and then recurring ones
   setTimeout(() => {
     performBackup();
@@ -128,48 +124,28 @@ function scheduleBackups() {
 // Perform actual backup
 function performBackup() {
   try {
-    // Check if the database file exists first
-    if (!fs.existsSync(dbConfig.mainDbPath)) {
-      logger.warn('Cannot create backup: Database file does not exist yet');
-      return;
-    }
-    
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const backupFile = path.join(dbConfig.backups.path, `database_${timestamp}.sqlite`);
-    
-    fs.copyFileSync(dbConfig.mainDbPath, backupFile);
-    logger.info(`Database backup created: ${backupFile}`);
-    
-    // Manage backup retention
-    cleanupOldBackups();
+    // Use our centralized database backup utility
+    databaseBackup.backupAllDatabases(false)
+      .then(backupFiles => {
+        if (backupFiles.length > 0) {
+          logger.info(`Scheduled backup created: ${backupFiles.join(', ')}`);
+        } else {
+          logger.warn('Scheduled backup completed but no files were created');
+        }
+        
+        // Manage backup retention
+        return databaseBackup.cleanupOldBackups(dbConfig.backups.maxCount || 7);
+      })
+      .then(deletedCount => {
+        if (deletedCount > 0) {
+          logger.info(`Cleaned up ${deletedCount} old backup files`);
+        }
+      })
+      .catch(error => {
+        logger.error(`Database backup error: ${error.message}`, { error });
+      });
   } catch (error) {
     logger.error(`Database backup error: ${error.message}`, { error });
-  }
-}
-
-// Remove old backups exceeding the maxCount
-function cleanupOldBackups() {
-  const maxCount = dbConfig.backups.maxCount || 7;
-  
-  try {
-    const backupFiles = fs.readdirSync(dbConfig.backups.path)
-      .filter(file => file.startsWith('database_') && file.endsWith('.sqlite'))
-      .map(file => ({
-        name: file,
-        path: path.join(dbConfig.backups.path, file),
-        time: fs.statSync(path.join(dbConfig.backups.path, file)).mtime.getTime()
-      }))
-      .sort((a, b) => b.time - a.time); // Sort newest first
-    
-    // Delete older backups beyond the limit
-    if (backupFiles.length > maxCount) {
-      backupFiles.slice(maxCount).forEach(file => {
-        fs.unlinkSync(file.path);
-        logger.debug(`Removed old backup: ${file.name}`);
-      });
-    }
-  } catch (error) {
-    logger.error(`Backup cleanup error: ${error.message}`, { error });
   }
 }
 

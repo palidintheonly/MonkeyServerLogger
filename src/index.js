@@ -69,6 +69,17 @@ async function initialize() {
     // Make database models available on the client
     client.db = dbConnection.models;
     
+    // Run modmail settings fix to ensure consistency
+    try {
+      const { fixModmailSettings } = require('./utils/fix-modmail');
+      // Pass the client db models to the fix function
+      const result = await fixModmailSettings(client.db);
+      logger.info(`Modmail settings fix completed: ${result.fixed} fixed, ${result.consistent} already consistent`);
+    } catch (error) {
+      logger.warn(`Failed to fix modmail settings during startup: ${error.message}`);
+      // Continue startup even if fix fails
+    }
+    
     // Set up collections for command and cooldown tracking
     client.commands = new Collection();
     client.cooldowns = new Collection();
