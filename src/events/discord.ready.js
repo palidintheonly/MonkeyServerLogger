@@ -12,16 +12,8 @@ module.exports = {
   async execute(client) {
     logger.info(`Logged in as ${client.user.tag}`);
     
-    // Set bot presence/activity
-    client.user.setPresence({
-      status: 'online',
-      activities: [
-        {
-          name: '/help',
-          type: ActivityType.Listening
-        }
-      ]
-    });
+    // Set up rotating status messages
+    setupRotatingStatus(client);
     
     // Log some stats
     logger.info(`Connected to ${client.guilds.cache.size} guilds with ${client.channels.cache.size} channels`);
@@ -33,6 +25,51 @@ module.exports = {
     setupScheduledTasks(client);
   }
 };
+
+/**
+ * Set up rotating status messages to explain how to use the bot
+ * @param {Client} client - Discord client
+ */
+function setupRotatingStatus(client) {
+  // Define the status messages explaining how to use the bot
+  const statusMessages = [
+    { text: 'DM me for modmail support', type: ActivityType.Playing },
+    { text: '/help for commands', type: ActivityType.Listening },
+    { text: 'Contact server staff via DM', type: ActivityType.Watching },
+    { text: 'modmail.support/guide', type: ActivityType.Playing }
+  ];
+  
+  let currentIndex = 0;
+  
+  // Set initial status
+  updateStatus();
+  
+  // Set interval to rotate status every 15 seconds
+  setInterval(updateStatus, 15000);
+  
+  // Function to update the bot's status
+  function updateStatus() {
+    const status = statusMessages[currentIndex];
+    
+    client.user.setPresence({
+      status: 'online',
+      activities: [
+        {
+          name: status.text,
+          type: status.type
+        }
+      ]
+    });
+    
+    // Log status change in debug mode
+    logger.debug(`Status updated to: ${status.text} (${ActivityType[status.type]})`);
+    
+    // Move to next status, loop back to beginning if at the end
+    currentIndex = (currentIndex + 1) % statusMessages.length;
+  }
+  
+  logger.info('Rotating status messages enabled (15-second interval)');
+}
 
 /**
  * Register commands for all connected guilds at startup
