@@ -791,10 +791,33 @@ async function handleModmailReplySubmit(interaction, client) {
       
       // Send the reply embed and the continuation message in a single message
       // This ensures replies will be properly associated with the thread
-      await user.send({ 
-        embeds: [replyEmbed],
-        content: `💬 **You can reply directly to this message to continue the conversation with ${interaction.guild.name}.**`
-      });
+      logger.debug(`Sending staff reply to user ${user.id} for thread ${thread.id} in guild ${interaction.guild.name} (${interaction.guild.id})`);
+      
+      try {
+        // Store thread information in a per-user session to help with reply tracking
+        if (!client.userSessions) client.userSessions = new Map();
+        
+        // Create or update user session with thread info to improve reply handling
+        client.userSessions.set(user.id, {
+          threadId: thread.id,
+          guildId: interaction.guild.id,
+          lastMessageAt: new Date(),
+          lastStaffId: interaction.user.id
+        });
+        
+        logger.debug(`Updated user session for ${user.id} with thread ${thread.id}`);
+        
+        // Send the message with clear instructions for replying
+        await user.send({ 
+          embeds: [replyEmbed],
+          content: `💬 **You can reply directly to this message to continue the conversation with ${interaction.guild.name}.**\n\nStaff member: ${interaction.user.tag}`
+        });
+        
+        logger.debug(`Successfully sent staff reply to user ${user.id}`);
+      } catch (dmError) {
+        logger.error(`Failed to send DM to user ${user.id}: ${dmError.message}`);
+        throw new Error(`Could not send message to user. They may have DMs disabled or have blocked the bot. Error: ${dmError.message}`);
+      }
       
       // Echo the reply in the thread
       const echoEmbed = {

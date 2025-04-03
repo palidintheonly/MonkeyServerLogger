@@ -18,24 +18,41 @@ const { v4: uuidv4 } = require('uuid');
  * @returns {Promise<ModmailThread|null>} - Found thread or null
  */
 async function findThreadWithFallback(client, threadId, userId = null, guildId = null) {
-  logger.debug(`Looking for thread with ID ${threadId}`);
+  logger.debug(`Looking for thread with ID ${threadId}, userId=${userId}, guildId=${guildId}`);
   
   try {
-    // Primary lookup by ID
-    let thread = await client.db.ModmailThread.findOne({
-      where: { id: threadId }
-    });
-    
-    if (thread) {
-      logger.debug(`Found thread directly: ${thread.id}`);
-      return thread;
+    // Primary lookup by ID if provided
+    if (threadId) {
+      let thread = await client.db.ModmailThread.findOne({
+        where: { id: threadId }
+      });
+      
+      if (thread) {
+        logger.debug(`Found thread directly by ID: ${thread.id}`);
+        
+        // Verify the channel still exists
+        try {
+          const guild = client.guilds.cache.get(thread.guildId);
+          if (guild) {
+            const channel = await guild.channels.fetch(thread.id).catch(() => null);
+            if (!channel) {
+              logger.warn(`Thread ${thread.id} exists in database but channel not found in Discord`);
+              // Don't return null here - we'll update the record later if needed
+            }
+          }
+        } catch (channelError) {
+          logger.error(`Error checking channel for thread ${thread.id}: ${channelError.message}`);
+        }
+        
+        return thread;
+      }
     }
     
     // If we have a user ID and guild ID, try to find active threads for that combination
     if (userId && guildId) {
       logger.debug(`Thread not found by ID, trying userId=${userId} and guildId=${guildId}`);
       
-      thread = await client.db.ModmailThread.findOne({
+      let thread = await client.db.ModmailThread.findOne({
         where: {
           userId: userId,
           guildId: guildId,
@@ -46,6 +63,49 @@ async function findThreadWithFallback(client, threadId, userId = null, guildId =
       
       if (thread) {
         logger.debug(`Found thread by user/guild combo: ${thread.id}`);
+        
+        // Check if the channel exists in Discord
+        try {
+          const guild = client.guilds.cache.get(thread.guildId);
+          if (guild) {
+            const channel = await guild.channels.fetch(thread.id).catch(() => null);
+            if (!channel) {
+              logger.warn(`Thread ${thread.id} exists in database but channel not found in Discord - attempting channel lookup by name`);
+              
+              // Try to find the channel by name pattern (includes user ID segment)
+              const userIdSegment = userId.substring(0, 8);
+              const possibleChannels = guild.channels.cache
+                .filter(c => {
+                  // Look for channels in the modmail category
+                  const guildSettings = client.db.Guild.findOne({
+                    where: { guildId: guild.id }
+                  });
+                  
+                  if (!guildSettings) return false;
+                  
+                  const modmailSettings = guildSettings.getSetting('modmail') || {};
+                  const categoryId = modmailSettings.categoryId;
+                  
+                  return c.name.includes(userIdSegment) && 
+                         (categoryId ? c.parentId === categoryId : true);
+                })
+                .sort((a, b) => b.createdTimestamp - a.createdTimestamp);
+              
+              if (possibleChannels.size > 0) {
+                const foundChannel = possibleChannels.first();
+                logger.info(`Found channel ${foundChannel.id} matching user ID segment ${userIdSegment}`);
+                
+                // Update the thread record with the new channel ID
+                thread.id = foundChannel.id;
+                await thread.save();
+                logger.info(`Updated thread record with new channel ID ${foundChannel.id}`);
+              }
+            }
+          }
+        } catch (channelError) {
+          logger.error(`Error checking channel for thread ${thread.id}: ${channelError.message}`);
+        }
+        
         return thread;
       }
     }
@@ -66,6 +126,27 @@ async function findThreadWithFallback(client, threadId, userId = null, guildId =
         logger.debug(`Found ${threads.length} threads for user, using most recent: ${threads[0].id}`);
         // Log full thread data for debugging
         logger.debug(`Thread data: ${JSON.stringify(threads[0].toJSON())}`);
+        
+        // Verify the channel exists for the most recent thread
+        try {
+          const thread = threads[0];
+          const guild = client.guilds.cache.get(thread.guildId);
+          if (guild) {
+            const channel = await guild.channels.fetch(thread.id).catch(() => null);
+            if (!channel) {
+              logger.warn(`Thread ${thread.id} exists in database but channel not found in Discord`);
+              
+              // Try next thread if this one has a missing channel
+              if (threads.length > 1) {
+                logger.info(`Trying next most recent thread: ${threads[1].id}`);
+                return threads[1];
+              }
+            }
+          }
+        } catch (channelError) {
+          logger.error(`Error checking channel for thread ${threads[0].id}: ${channelError.message}`);
+        }
+        
         return threads[0];
       }
     }
@@ -90,7 +171,7 @@ async function findThreadWithFallback(client, threadId, userId = null, guildId =
     
     // If no threadId was provided but we have userId, try to find any thread regardless of open status
     // This helps with continuity when a thread was closed but user replies anyway
-    if (!threadId && userId) {
+    if (userId) {
       logger.debug(`No open threads found, checking for any thread (including closed) for userId=${userId}`);
       
       const threads = await client.db.ModmailThread.findAll({
@@ -103,6 +184,68 @@ async function findThreadWithFallback(client, threadId, userId = null, guildId =
       if (threads.length > 0) {
         logger.debug(`Found ${threads.length} threads (including closed) for user, using most recent: ${threads[0].id}`);
         return threads[0];
+      }
+    }
+    
+    // Last resort: if we have userId and guild, try to find channels by name pattern
+    if (userId && guildId) {
+      logger.debug(`No threads found in database, attempting direct channel lookup by name pattern`);
+      
+      try {
+        const guild = client.guilds.cache.get(guildId);
+        if (guild) {
+          const userIdSegment = userId.substring(0, 8);
+          
+          // Try to find the modmail category
+          const guildSettings = await client.db.Guild.findOne({
+            where: { guildId: guildId }
+          });
+          
+          let categoryId = null;
+          if (guildSettings) {
+            const modmailSettings = guildSettings.getSetting('modmail') || {};
+            categoryId = modmailSettings.categoryId;
+          }
+          
+          // Look for channels matching the pattern
+          const possibleChannels = guild.channels.cache
+            .filter(c => 
+              c.name.includes('mm-') && 
+              c.name.includes(userIdSegment) && 
+              (categoryId ? c.parentId === categoryId : true)
+            )
+            .sort((a, b) => b.createdTimestamp - a.createdTimestamp);
+          
+          if (possibleChannels.size > 0) {
+            const channel = possibleChannels.first();
+            logger.info(`Found channel ${channel.id} matching user ID segment ${userIdSegment}`);
+            
+            // Create a thread record if one doesn't exist
+            const [thread, created] = await client.db.ModmailThread.findOrCreate({
+              where: { id: channel.id },
+              defaults: {
+                id: channel.id,
+                userId: userId,
+                guildId: guildId,
+                open: true,
+                subject: 'Recovered thread',
+                lastMessageAt: new Date(),
+                messageCount: 1,
+                createdBy: userId
+              }
+            });
+            
+            if (created) {
+              logger.info(`Created new thread record for existing channel ${channel.id}`);
+            } else {
+              logger.info(`Found existing thread record for channel ${channel.id}`);
+            }
+            
+            return thread;
+          }
+        }
+      } catch (directLookupError) {
+        logger.error(`Error in direct channel lookup: ${directLookupError.message}`);
       }
     }
     

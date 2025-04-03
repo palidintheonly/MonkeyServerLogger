@@ -22,6 +22,36 @@ module.exports = {
       try {
         logger.info(`Received DM from ${message.author.tag} (${message.author.id}): ${message.content.substring(0, 50)}${message.content.length > 50 ? '...' : ''}`);
         
+        // Check if there's a recent user session for faster thread lookup
+        const userId = message.author.id;
+        const userSession = client.userSessions?.get(userId);
+        
+        // If we have a recent session (within last hour), use it to help locate the thread
+        if (userSession) {
+          const sessionAge = Date.now() - userSession.lastMessageAt.getTime();
+          const oneHour = 60 * 60 * 1000;
+          
+          if (sessionAge < oneHour) {
+            logger.debug(`Found recent user session for ${userId} with thread ${userSession.threadId} in guild ${userSession.guildId} (${sessionAge / 1000}s old)`);
+            
+            // Try to find the thread using session data
+            const thread = await findThreadWithFallback(
+              client,
+              userSession.threadId,
+              userId,
+              userSession.guildId
+            );
+            
+            if (thread) {
+              logger.info(`Using thread from user session: ${thread.id}`);
+              // Process this as a single thread case
+              return await handleExistingThreads(message, client, [thread]);
+            }
+          } else {
+            logger.debug(`User session for ${userId} exists but is too old (${sessionAge / 1000}s)`);
+          }
+        }
+        
         // Check if we're running in server-based sharding mode
         const isServerBasedSharding = process.env.ASSIGNED_GUILD_ID !== undefined;
         
@@ -87,8 +117,55 @@ async function handleExistingThreads(message, client, existingThreads) {
         });
       }
       
-      // Get the channel
-      const channel = await guild.channels.fetch(thread.id).catch(() => null);
+      // Get the channel - add extensive error handling and debugging
+      logger.debug(`Attempting to fetch channel for thread ID ${thread.id} in guild ${guild.name} (${guild.id})`);
+      
+      let channel;
+      try {
+        channel = await guild.channels.fetch(thread.id).catch(error => {
+          logger.error(`Error fetching channel ${thread.id}: ${error.message}`);
+          return null;
+        });
+      } catch (fetchError) {
+        logger.error(`Exception during channel fetch for thread ID ${thread.id}: ${fetchError.message}`);
+        channel = null;
+      }
+      
+      // If channel fetch failed, try to use an alternative lookup
+      if (!channel) {
+        logger.debug(`Primary channel fetch failed for thread ID ${thread.id}, trying to find via category`);
+        
+        try {
+          // Try to get guild settings to find modmail category
+          const guildSettings = await client.db.Guild.findOne({
+            where: { guildId: guild.id }
+          });
+          
+          if (guildSettings) {
+            const modmailSettings = guildSettings.getSetting('modmail') || {};
+            const categoryId = modmailSettings.categoryId;
+            
+            if (categoryId) {
+              // Try to find the channel in that category with a matching name pattern
+              const possibleChannels = guild.channels.cache
+                .filter(c => c.parentId === categoryId && 
+                       c.name.includes(message.author.id.substring(0, 8)))
+                .sort((a, b) => b.createdTimestamp - a.createdTimestamp);
+              
+              if (possibleChannels.size > 0) {
+                channel = possibleChannels.first();
+                logger.info(`Found alternative channel match ${channel.id} for user ${message.author.id}`);
+                
+                // Update thread record with new channel ID
+                thread.id = channel.id;
+                await thread.save();
+              }
+            }
+          }
+        } catch (altLookupError) {
+          logger.error(`Alternative channel lookup failed: ${altLookupError.message}`);
+        }
+      }
       
       if (!channel) {
         // Channel was deleted, close the thread and create a new one
@@ -210,8 +287,57 @@ async function handleExistingThreads(message, client, existingThreads) {
       const guild = client.guilds.cache.get(mostRecentThread.guildId);
       if (!guild) return; // Unexpected error, fall back to selection
       
-      const channel = await guild.channels.fetch(mostRecentThread.id).catch(() => null);
-      if (!channel) return; // Channel not found, fall back to selection
+      // Try to fetch the channel with extensive error handling
+      logger.debug(`Attempting to fetch channel for most recent thread ID ${mostRecentThread.id} in guild ${guild.name} (${guild.id})`);
+      
+      let channel;
+      try {
+        channel = await guild.channels.fetch(mostRecentThread.id).catch(error => {
+          logger.error(`Error fetching channel ${mostRecentThread.id}: ${error.message}`);
+          return null;
+        });
+      } catch (fetchError) {
+        logger.error(`Exception during channel fetch for thread ID ${mostRecentThread.id}: ${fetchError.message}`);
+        channel = null;
+      }
+      
+      // If channel fetch failed, try to use an alternative lookup
+      if (!channel) {
+        logger.debug(`Primary channel fetch failed for thread ID ${mostRecentThread.id}, trying to find via category`);
+        
+        try {
+          // Try to get guild settings to find modmail category
+          const guildSettings = await client.db.Guild.findOne({
+            where: { guildId: guild.id }
+          });
+          
+          if (guildSettings) {
+            const modmailSettings = guildSettings.getSetting('modmail') || {};
+            const categoryId = modmailSettings.categoryId;
+            
+            if (categoryId) {
+              // Try to find the channel in that category with a matching name pattern
+              const possibleChannels = guild.channels.cache
+                .filter(c => c.parentId === categoryId && 
+                       c.name.includes(message.author.id.substring(0, 8)))
+                .sort((a, b) => b.createdTimestamp - a.createdTimestamp);
+              
+              if (possibleChannels.size > 0) {
+                channel = possibleChannels.first();
+                logger.info(`Found alternative channel match ${channel.id} for user ${message.author.id}`);
+                
+                // Update thread record with new channel ID
+                mostRecentThread.id = channel.id;
+                await mostRecentThread.save();
+              }
+            }
+          }
+        } catch (altLookupError) {
+          logger.error(`Alternative channel lookup failed: ${altLookupError.message}`);
+        }
+      }
+      
+      if (!channel) return; // Channel not found after all attempts, fall back to selection
       
       // Forward the message to this thread
       await mostRecentThread.updateActivity('user_dm_recent_thread');
