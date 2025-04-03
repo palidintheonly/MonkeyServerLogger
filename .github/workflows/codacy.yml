@@ -10,6 +10,9 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v2
 
+    - name: Set permissions
+      run: sudo chmod -R 777 $(pwd)
+
     - name: Run ESLint Analysis
       run: docker run --rm -v $(pwd):/src codacy/codacy-eslint:5.9.1 /src
 
