@@ -50,6 +50,17 @@ module.exports = {
           else if (customId === 'modmail_transcript') {
             await handleModmailTranscript(interaction, client);
           }
+          // Handle database clear command buttons
+          else if (customId.startsWith('clear-guild-select') || 
+                   customId.startsWith('confirm-clear-guild-') || 
+                   customId === 'cancel-clear-guild' ||
+                   customId === 'confirm-clear-modmail' || 
+                   customId === 'cancel-clear-modmail' ||
+                   customId === 'confirm-clear-all' ||
+                   customId === 'cancel-clear-all') {
+            // These are handled by the command's collector
+            // We don't need to do anything here
+          }
           // Handle any other button/select menu interactions
           else {
             await interaction.reply({
