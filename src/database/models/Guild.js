@@ -15,17 +15,22 @@ module.exports = (sequelize) => {
      */
     static async findOrCreate(guildId, guildName) {
       try {
-        return await Guild.findOrCreate({
+        // Use the Sequelize Model.findOrCreate method directly
+        return await super.findOrCreate({
           where: { guildId },
           defaults: {
-            guildName,
-            joinedAt: new Date(),
+            // Store guild name in settings
             settings: {
+              guildName,
               disabledCommands: [],
               modmail: {
                 enabled: false
               }
-            }
+            },
+            // Required fields from the schema
+            enabledCategories: '[]',
+            setupCompleted: false,
+            modmailEnabled: false
           }
         });
       } catch (error) {
@@ -41,7 +46,20 @@ module.exports = (sequelize) => {
      */
     getSetting(key) {
       try {
-        const settings = this.settings || {};
+        // Get settings as object
+        let settings = {};
+        
+        if (typeof this.settings === 'string') {
+          // Parse string to object if needed
+          try {
+            settings = JSON.parse(this.settings);
+          } catch (e) {
+            logger.warn(`Invalid settings JSON for guild ${this.guildId}`);
+            return undefined;
+          }
+        } else if (this.settings) {
+          settings = this.settings;
+        }
         
         // If simple key, return directly
         if (!key.includes('.')) {
@@ -72,29 +90,52 @@ module.exports = (sequelize) => {
      */
     async updateSetting(key, value) {
       try {
-        const settings = this.settings || {};
+        // Get current settings as object
+        let currentSettings = {};
+        
+        if (typeof this.settings === 'string') {
+          // Parse string to object if needed
+          try {
+            currentSettings = JSON.parse(this.settings);
+          } catch (e) {
+            logger.warn(`Invalid settings JSON for guild ${this.guildId}, resetting`);
+          }
+        } else if (this.settings) {
+          // Use existing object
+          currentSettings = { ...this.settings };
+        }
         
         // If simple key, update directly
         if (!key.includes('.')) {
-          settings[key] = value;
+          currentSettings[key] = value;
         } else {
           // Handle nested keys
-          let obj = settings;
+          let obj = currentSettings;
           const parts = key.split('.');
           const lastPart = parts.pop();
           
-          for (const part of parts) {
-            if (obj[part] === undefined || obj[part] === null) {
+          for (let i = 0; i < parts.length; i++) {
+            const part = parts[i];
+            
+            // Check if current level exists and is an object
+            if (typeof obj[part] !== 'object' || obj[part] === null || Array.isArray(obj[part])) {
+              // If not an object, overwrite with an empty object
+              logger.debug(`Converting ${part} from ${typeof obj[part]} to object`);
               obj[part] = {};
             }
+            
             obj = obj[part];
           }
           
           obj[lastPart] = value;
         }
         
-        this.settings = settings;
+        // Update settings and save
+        this.settings = currentSettings;
         await this.save();
+        
+        // Log success
+        logger.debug(`Updated setting ${key} for guild ${this.guildId}`);
         
         return this;
       } catch (error) {
@@ -110,9 +151,30 @@ module.exports = (sequelize) => {
      */
     async updateSettings(newSettings) {
       try {
+        // Get current settings as object
+        let currentSettings = {};
+        
+        if (typeof this.settings === 'string') {
+          // Parse string to object if needed
+          try {
+            currentSettings = JSON.parse(this.settings);
+          } catch (e) {
+            logger.warn(`Invalid settings JSON for guild ${this.guildId}, resetting`);
+          }
+        } else if (this.settings) {
+          // Use existing object
+          currentSettings = { ...this.settings };
+        }
+        
         // Deep merge the settings
-        this.settings = deepMerge(this.settings || {}, newSettings);
+        const mergedSettings = deepMerge(currentSettings, newSettings);
+        
+        // Update and save
+        this.settings = mergedSettings;
         await this.save();
+        
+        // Log success
+        logger.debug(`Updated multiple settings for guild ${this.guildId}`);
         
         return this;
       } catch (error) {
@@ -170,24 +232,90 @@ module.exports = (sequelize) => {
       allowNull: false
     },
     guildName: {
+      type: DataTypes.VIRTUAL,
+      get() {
+        // Return guild name from settings or a default
+        const settings = this.getDataValue('settings') || {};
+        return settings.guildName || `Guild ${this.guildId}`;
+      },
+      set(value) {
+        // Store guild name in settings
+        const currentSettings = this.getDataValue('settings') || {};
+        const newSettings = { ...currentSettings, guildName: value };
+        this.setDataValue('settings', newSettings);
+      }
+    },
+    loggingChannelId: {
       type: DataTypes.STRING,
+      allowNull: true
+    },
+    categoryChannels: {
+      type: DataTypes.TEXT,
+      allowNull: false,
+      defaultValue: '{}'
+    },
+    ignoredChannels: {
+      type: DataTypes.TEXT,
+      allowNull: false,
+      defaultValue: '[]'
+    },
+    ignoredRoles: {
+      type: DataTypes.TEXT,
+      allowNull: false,
+      defaultValue: '[]'
+    },
+    enabledCategories: {
+      type: DataTypes.TEXT,
       allowNull: false
     },
-    joinedAt: {
-      type: DataTypes.DATE,
+    setupCompleted: {
+      type: DataTypes.BOOLEAN,
       allowNull: false,
-      defaultValue: DataTypes.NOW
+      defaultValue: false
+    },
+    modmailEnabled: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false
+    },
+    modmailCategoryId: {
+      type: DataTypes.STRING,
+      allowNull: true
+    },
+    modmailInfoChannelId: {
+      type: DataTypes.STRING,
+      allowNull: true
+    },
+    setupProgress: {
+      type: DataTypes.TEXT,
+      allowNull: false,
+      defaultValue: '{"step": 0, "lastUpdated": null}'
+    },
+    setupData: {
+      type: DataTypes.TEXT,
+      allowNull: false,
+      defaultValue: '{}'
+    },
+    verboseLoggingEnabled: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false
+    },
+    verboseLoggingChannelId: {
+      type: DataTypes.STRING,
+      allowNull: true
     },
     settings: {
       type: DataTypes.JSON,
-      allowNull: false,
+      allowNull: true,
       defaultValue: {}
     }
   }, {
     sequelize,
     modelName: 'Guild',
+    tableName: 'guilds', // Explicitly set table name to match existing schema
     timestamps: true,
-    paranoid: true
+    paranoid: false // No deletedAt column in schema
   });
   
   return Guild;
@@ -200,21 +328,24 @@ module.exports = (sequelize) => {
  * @returns {Object} - Merged object
  */
 function deepMerge(target, source) {
+  // Create a copy of the target if it's not an object
+  if (typeof target !== 'object' || target === null || Array.isArray(target)) {
+    target = {};
+  }
+  
   // For each property in source
   for (const key in source) {
-    // If it's an object and not null or an array
-    if (
-      source[key] && 
-      typeof source[key] === 'object' && 
-      !Array.isArray(source[key]) &&
-      target[key] && 
-      typeof target[key] === 'object' && 
-      !Array.isArray(target[key])
-    ) {
+    // If source property is an object (and not null or array)
+    if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
+      // Make sure target property is an object we can merge into
+      if (typeof target[key] !== 'object' || target[key] === null || Array.isArray(target[key])) {
+        target[key] = {};
+      }
+      
       // Recursively merge the objects
       deepMerge(target[key], source[key]);
     } else {
-      // Otherwise just assign the property
+      // For non-objects (including arrays), just assign the property
       target[key] = source[key];
     }
   }
