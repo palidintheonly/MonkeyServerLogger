@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [2.0.0] - 2025-04-03 "The Royal Court"
 
 ### Added
+- Custom server-based sharding implementation (one shard per server)
+- Multiple sharding modes (standalone, standard, server-based)
 - Version tracking system with dedicated version.js file
 - Comprehensive logging system with separate files for different log levels
 - Automatic database backup system with daily backups
@@ -21,6 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Corrected multiple race conditions in event handling
 
 ### Changed
+- Implemented custom shard management with three operation modes (standalone, standard, server-based)
+- Enhanced logger to support shard-specific prefixes and metadata
+- Modified event handlers to adapt behavior based on sharding mode
 - Refactored command system for better error handling
 - Improved modmail thread tracking with enhanced database models
 - Enhanced embed consistency and visual presentation

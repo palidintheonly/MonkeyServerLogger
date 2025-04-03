@@ -18,13 +18,28 @@ const consoleFormat = format.combine(
   format.colorize(),
   format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
   format.printf(({ timestamp, level, message, ...meta }) => {
-    return `${timestamp} ${level}: ${message} ${Object.keys(meta).length ? JSON.stringify(meta, null, 2) : ''}`;
+    // Add shard/server prefix if available from environment variables
+    const prefix = process.env.LOG_PREFIX || '';
+    return `${timestamp} ${level}: ${prefix} ${message} ${Object.keys(meta).length ? JSON.stringify(meta, null, 2) : ''}`;
   })
 );
 
 // Custom format for file output
 const fileFormat = format.combine(
   format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+  format.metadata({
+    fillExcept: ['timestamp', 'level', 'message']
+  }),
+  format(info => {
+    // Add shard information to metadata if available
+    if (process.env.SHARD_ID) {
+      info.shardId = process.env.SHARD_ID;
+    }
+    if (process.env.ASSIGNED_GUILD_ID) {
+      info.guildId = process.env.ASSIGNED_GUILD_ID;
+    }
+    return info;
+  })(),
   format.json()
 );
 

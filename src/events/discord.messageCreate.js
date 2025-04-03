@@ -22,13 +22,24 @@ module.exports = {
       try {
         logger.info(`Received DM from ${message.author.tag} (${message.author.id}): ${message.content.substring(0, 50)}${message.content.length > 50 ? '...' : ''}`);
         
-        // Check if user has existing active modmail threads
-        const existingThreads = await client.db.ModmailThread.findAll({
+        // Check if we're running in server-based sharding mode
+        const isServerBasedSharding = process.env.ASSIGNED_GUILD_ID !== undefined;
+        
+        // Query params for finding active threads
+        const queryParams = {
           where: {
             userId: message.author.id,
             open: true
           }
-        });
+        };
+        
+        // If in server-based sharding mode, only look for threads in the assigned guild
+        if (isServerBasedSharding) {
+          queryParams.where.guildId = process.env.ASSIGNED_GUILD_ID;
+        }
+        
+        // Check if user has existing active modmail threads
+        const existingThreads = await client.db.ModmailThread.findAll(queryParams);
         
         if (existingThreads.length > 0) {
           // User has one or more active threads
@@ -284,6 +295,33 @@ async function handleExistingThreads(message, client, existingThreads) {
 }
 
 /**
+ * Get default guild settings object for database
+ * @param {Guild} guild - Discord guild
+ * @returns {Object} Default settings object
+ */
+function getDefaultGuildSettings(guild) {
+  return {
+    guildId: guild.id,
+    guildName: guild.name,
+    enabledCategories: '[]',
+    setupCompleted: false,
+    modmailEnabled: false,
+    ignoredChannels: '[]',
+    ignoredRoles: '[]',
+    categoryChannels: '{}',
+    setupProgress: JSON.stringify({ step: 0, lastUpdated: null }),
+    setupData: '{}',
+    settings: {
+      guildName: guild.name,
+      disabledCommands: [],
+      modmail: {
+        enabled: false
+      }
+    }
+  };
+}
+
+/**
  * Handle creation of a new modmail thread
  * @param {Message} message - Original DM
  * @param {Client} client - Discord client
@@ -295,51 +333,102 @@ async function handleNewModmail(message, client) {
     // 2. Modmail is enabled
     const guildsWithModmail = [];
     
-    for (const [guildId, guild] of client.guilds.cache) {
+    // Get shard information from client
+    const shardInfo = client.shardInfo || { mode: 'standalone' };
+    
+    // In server-based sharding mode, only check the assigned guild
+    if (shardInfo.mode === 'server-based') {
+      const targetGuildId = shardInfo.targetGuildId;
+      if (!targetGuildId) {
+        logger.warn('Server-based sharding enabled but no target guild ID assigned');
+        return message.reply({
+          content: "I'm not currently configured to handle modmail. Please try again later or contact the bot administrator."
+        });
+      }
+      
+      const guild = client.guilds.cache.get(targetGuildId);
+      if (!guild) {
+        logger.warn(`Target guild ${targetGuildId} not found in cache for modmail`);
+        return message.reply({
+          content: "I'm currently having trouble connecting to your server. Please try again later."
+        });
+      }
+      
       // Check if user is in this guild
       const member = await guild.members.fetch(message.author.id).catch(() => null);
-      if (!member) continue;
+      if (!member) {
+        return message.reply({
+          content: `You are not a member of ${guild.name}, which is the only guild I'm configured to handle in this shard.`
+        });
+      }
       
-      // Check if modmail is enabled - use findOrCreate with proper format to ensure DB consistency
+      // Process this specific guild
       const [guildSettings] = await client.db.Guild.findOrCreate({
-        where: { guildId: guildId },
-        defaults: { 
-          guildId: guildId,
-          guildName: guild.name,
-          // Required fields from the schema
-          enabledCategories: '[]',
-          setupCompleted: false,
-          modmailEnabled: false,
-          ignoredChannels: '[]',
-          ignoredRoles: '[]',
-          categoryChannels: '{}',
-          setupProgress: JSON.stringify({ step: 0, lastUpdated: null }),
-          setupData: '{}',
-          settings: {
-            guildName: guild.name,
-            disabledCommands: [],
-            modmail: {
-              enabled: false
-            }
-          }
-        }
+        where: { guildId: targetGuildId },
+        defaults: getDefaultGuildSettings(guild)
       });
       
-      // Get modmail settings from both sources (JSON and dedicated column)
+      // Check if modmail is enabled
       const modmailSettings = guildSettings && guildSettings.getSetting('modmail') || {};
       const jsonModmailEnabled = modmailSettings.enabled === true;
       const columnModmailEnabled = guildSettings.modmailEnabled === true;
-      
-      // Modmail is enabled if BOTH the JSON setting and the database column are true
       const modmailEnabled = jsonModmailEnabled && columnModmailEnabled;
       
-      // Add debug logging
-      console.log(`Guild ${guild.name} (${guildId}) modmail settings:`, modmailSettings);
-      console.log(`Guild ${guild.name} (${guildId}) modmail enabled - JSON:`, jsonModmailEnabled, 'Column:', columnModmailEnabled);
-      
-      if (!modmailEnabled) continue;
-      
-      guildsWithModmail.push(guild);
+      if (modmailEnabled) {
+        guildsWithModmail.push(guild);
+      } else {
+        return message.reply({
+          content: `Modmail is not enabled for ${guild.name}. Please ask a server administrator to enable it.`
+        });
+      }
+    } else {
+      // Standard mode: check all guilds
+      for (const [guildId, guild] of client.guilds.cache) {
+        // Check if user is in this guild
+        const member = await guild.members.fetch(message.author.id).catch(() => null);
+        if (!member) continue;
+        
+        // Check if modmail is enabled - use findOrCreate with proper format to ensure DB consistency
+        const [guildSettings] = await client.db.Guild.findOrCreate({
+          where: { guildId: guildId },
+          defaults: { 
+            guildId: guildId,
+            guildName: guild.name,
+            // Required fields from the schema
+            enabledCategories: '[]',
+            setupCompleted: false,
+            modmailEnabled: false,
+            ignoredChannels: '[]',
+            ignoredRoles: '[]',
+            categoryChannels: '{}',
+            setupProgress: JSON.stringify({ step: 0, lastUpdated: null }),
+            setupData: '{}',
+            settings: {
+              guildName: guild.name,
+              disabledCommands: [],
+              modmail: {
+                enabled: false
+              }
+            }
+          }
+        });
+        
+        // Get modmail settings from both sources (JSON and dedicated column)
+        const modmailSettings = guildSettings && guildSettings.getSetting('modmail') || {};
+        const jsonModmailEnabled = modmailSettings.enabled === true;
+        const columnModmailEnabled = guildSettings.modmailEnabled === true;
+        
+        // Modmail is enabled if BOTH the JSON setting and the database column are true
+        const modmailEnabled = jsonModmailEnabled && columnModmailEnabled;
+        
+        // Add debug logging
+        console.log(`Guild ${guild.name} (${guildId}) modmail settings:`, modmailSettings);
+        console.log(`Guild ${guild.name} (${guildId}) modmail enabled - JSON:`, jsonModmailEnabled, 'Column:', columnModmailEnabled);
+        
+        if (!modmailEnabled) continue;
+        
+        guildsWithModmail.push(guild);
+      }
     }
     
     if (guildsWithModmail.length === 0) {

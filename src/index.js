@@ -1,9 +1,15 @@
 /**
  * Discord Modmail Bot - Main Entry Point
- * A dedicated Discord modmail bot for cross-server communication
+ * A dedicated Discord modmail bot for cross-server communication with sharding support
  */
 require('dotenv').config();
-const { Client, Collection, GatewayIntentBits, Partials } = require('discord.js');
+const { 
+  Client, 
+  Collection, 
+  GatewayIntentBits, 
+  Partials,
+  ShardClientUtil
+} = require('discord.js');
 const { connectToDatabase } = require('./database/db');
 const { client: clientConfig, bot: botConfig } = require('./config');
 const { logger } = require('./utils/logger');
@@ -25,7 +31,43 @@ if (!process.env.DISCORD_BOT_TOKEN) {
 // Initialize function that sets up the bot
 async function initialize() {
   try {
-    // Create discord.js client instance
+    // Identify the running mode (server-based sharding, standard sharding, or standalone)
+    const isServerBasedSharding = process.env.ASSIGNED_GUILD_ID !== undefined;
+    const isStandardSharding = process.argv.includes('--sharded') && !isServerBasedSharding;
+    
+    // Set up sharding configuration
+    let shardData = {};
+    let targetGuildId = null;
+    
+    if (isServerBasedSharding) {
+      // Server-based sharding (one shard per server)
+      const shardId = parseInt(process.env.SHARD_ID || '0');
+      targetGuildId = process.env.ASSIGNED_GUILD_ID;
+      
+      logger.info(`Starting in server-dedicated mode for guild: ${targetGuildId} (Shard ${shardId})`);
+      
+      // Store shard data for client configuration
+      shardData = { 
+        shardId, 
+        totalShards: parseInt(process.env.SHARD_COUNT || '1'),
+        mode: 'server-based'
+      };
+      
+    } else if (isStandardSharding) {
+      // Standard Discord.js sharding
+      const shardId = parseInt(process.env.SHARD_ID || '0');
+      const totalShards = parseInt(process.env.SHARD_COUNT || '1');
+      
+      shardData = { shardId, totalShards, mode: 'standard' };
+      logger.info(`Starting with standard sharding as shard ${shardId}/${totalShards - 1}`);
+      
+    } else {
+      // Standalone mode (no sharding)
+      logger.info('Starting in standalone mode (no sharding)');
+      shardData = { mode: 'standalone' };
+    }
+    
+    // Create discord.js client instance with appropriate configuration
     const client = new Client({
       intents: Object.values(GatewayIntentBits)
         .filter(intent => clientConfig.intents.includes(
@@ -38,8 +80,20 @@ async function initialize() {
         Partials.GuildMember,
         Partials.Reaction
       ],
-      allowedMentions: { parse: ['users', 'roles'], repliedUser: true }
+      allowedMentions: { parse: ['users', 'roles'], repliedUser: true },
+      
+      // Include sharding information if appropriate
+      ...((shardData.mode === 'standard' || shardData.mode === 'server-based') ? {
+        shards: shardData.shardId,
+        shardCount: shardData.totalShards
+      } : {})
     });
+    
+    // Store shard mode information on the client for reference
+    client.shardInfo = {
+      ...shardData,
+      targetGuildId
+    };
     
     // Connect to database with retry mechanism
     let dbConnection;

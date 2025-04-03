@@ -78,11 +78,13 @@ The bot is built with modern technologies for reliability and performance:
 
 ### Core Technologies
 - **Node.js & Discord.js v14**: Latest Discord API features and optimizations
+- **Custom Server-Based Sharding**: One shard per server for improved reliability and resource isolation
 - **SQLite Database**: Efficient and reliable data storage with automated backups
 - **Custom Embed Builder**: Professional and consistent message formatting
 - **Winston Logger**: Comprehensive logging for troubleshooting and monitoring
 
 ### Recent Improvements
+- **Server-Based Sharding**: Implemented custom one-shard-per-server approach for better resource allocation
 - **Enhanced Database Reliability**: Fixed circular reference handling in Guild model
 - **API Compatibility**: Updated to latest Discord.js interaction patterns
 - **Deprecation Fixes**: Replaced deprecated API calls with current standards
@@ -97,6 +99,25 @@ The bot is built with modern technologies for reliability and performance:
 ## Deployment
 
 The bot is hosted on Replit for 24/7 uptime with automated monitoring and restart capabilities.
+
+## Sharding
+
+This bot implements three different sharding modes:
+
+### 1. Standalone Mode (No Sharding)
+For small deployments with few servers, the bot can run without sharding. This is the default mode.
+
+### 2. Standard Discord.js Sharding
+For medium-sized deployments, the bot can use Discord.js's built-in sharding manager which distributes guilds across shards based on guild ID.
+
+### 3. Server-Based Sharding
+For optimal performance and reliability, the bot implements a custom "one shard per server" approach:
+- Each Discord server gets its own dedicated shard
+- Complete resource isolation between servers
+- Enhanced error containment (issues in one server won't affect others)
+- Improved ability to handle server-specific load patterns
+
+See [SHARDING.md](SHARDING.md) for detailed documentation on the server-based sharding implementation.
 
 ## Support
 
