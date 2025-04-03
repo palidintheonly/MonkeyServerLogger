@@ -479,13 +479,17 @@ async function handleNewModmailConversation(interaction, client) {
         }
       });
       
-      // Get modmail settings and explicitly check if enabled is true
+      // Get modmail settings from both sources (JSON and dedicated column)
       const modmailSettings = guildSettings && guildSettings.getSetting('modmail') || {};
-      const modmailEnabled = modmailSettings.enabled === true;
+      const jsonModmailEnabled = modmailSettings.enabled === true;
+      const columnModmailEnabled = guildSettings.modmailEnabled === true;
+      
+      // Modmail is enabled if BOTH the JSON setting and the database column are true
+      const modmailEnabled = jsonModmailEnabled && columnModmailEnabled;
       
       // Add debug logging
       logger.debug(`Guild ${guild.name} (${guildId}) modmail settings: ${JSON.stringify(modmailSettings)}`);
-      logger.debug(`Guild ${guild.name} (${guildId}) modmail enabled: ${modmailEnabled}`);
+      logger.debug(`Guild ${guild.name} (${guildId}) modmail enabled - JSON: ${jsonModmailEnabled}, Column: ${columnModmailEnabled}`);
       
       if (!modmailEnabled) continue;
       
@@ -494,7 +498,7 @@ async function handleNewModmailConversation(interaction, client) {
     
     if (guildsWithModmail.length === 0) {
       return interaction.editReply({
-        content: "I couldn't find any servers with modmail enabled that you're a member of.",
+        content: "I couldn't find any servers with modmail enabled that you're a member of.\n\nTo use modmail, an administrator on your server needs to enable it using the `/modmail-setup enable` command. Ask them to do this if you want to use modmail in your server.",
         components: []
       });
     }

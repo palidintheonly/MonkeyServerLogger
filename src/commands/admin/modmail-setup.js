@@ -110,7 +110,7 @@ module.exports = {
       });
     }
     
-    // Update settings
+    // Update both settings JSON and dedicated column
     await guildSettings.updateSettings({
       modmail: {
         enabled: true,
@@ -119,6 +119,11 @@ module.exports = {
         logChannelId: logChannel ? logChannel.id : null
       }
     });
+    
+    // Also update the dedicated column to keep them in sync
+    guildSettings.modmailEnabled = true;
+    guildSettings.modmailCategoryId = category.id;
+    await guildSettings.save();
     
     // Set category permissions to be private but accessible by staff role
     try {
@@ -175,12 +180,16 @@ module.exports = {
       });
     }
     
-    // Update settings
+    // Update both settings JSON and dedicated column
     await guildSettings.updateSettings({
       modmail: {
         enabled: false
       }
     });
+    
+    // Also update the dedicated column to keep them in sync
+    guildSettings.modmailEnabled = false;
+    await guildSettings.save();
     
     // Send success message
     await interaction.editReply({
