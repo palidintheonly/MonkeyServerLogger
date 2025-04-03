@@ -26,11 +26,10 @@ module.exports = {
           const member = await guild.members.fetch(interaction.user.id).catch(() => null);
           if (!member) continue;
           
-          // Check if modmail is enabled in this guild
-          const guildSettings = await client.db.Guild.findOne({
-            where: { guildId }
-          });
+          // Check if modmail is enabled in this guild - use findByPk to avoid schema issues
+          const guildSettings = await client.db.Guild.findByPk(guildId);
           
+          // Use proper getSetting method if we found a guild
           const modmailEnabled = guildSettings && guildSettings.getSetting('modmail.enabled');
           
           if (modmailEnabled) {

@@ -235,10 +235,8 @@ async function handleNewModmail(message, client) {
       const member = await guild.members.fetch(message.author.id).catch(() => null);
       if (!member) continue;
       
-      // Check if modmail is enabled
-      const guildSettings = await client.db.Guild.findOne({
-        where: { guildId }
-      });
+      // Check if modmail is enabled - use findByPk to avoid schema issues
+      const guildSettings = await client.db.Guild.findByPk(guildId);
       
       const modmailEnabled = guildSettings && guildSettings.getSetting('modmail.enabled');
       if (!modmailEnabled) continue;

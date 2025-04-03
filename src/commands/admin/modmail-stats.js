@@ -44,11 +44,11 @@ module.exports = {
     try {
       const subcommand = interaction.options.getSubcommand();
       
-      // Get guild settings
-      const [guildSettings] = await client.db.Guild.findOrCreate({
-        where: { guildId: interaction.guild.id },
-        defaults: { guildName: interaction.guild.name }
-      });
+      // Get guild settings using our custom findOrCreate method
+      const [guildSettings] = await client.db.Guild.findOrCreate(
+        interaction.guild.id,
+        interaction.guild.name
+      );
       
       // Check if modmail is enabled
       const modmailEnabled = guildSettings.getSetting('modmail.enabled');

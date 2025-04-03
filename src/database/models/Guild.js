@@ -15,24 +15,30 @@ module.exports = (sequelize) => {
      */
     static async findOrCreate(guildId, guildName) {
       try {
-        // Use the Sequelize Model.findOrCreate method directly
-        return await super.findOrCreate({
+        // Use the Sequelize Model.findOrCreate method directly with proper schema
+        // Avoid referencing guildName directly in the query as it's a VIRTUAL field
+        const result = await super.findOrCreate({
           where: { guildId },
           defaults: {
-            // Store guild name in settings
-            settings: {
+            // Store guild name in settings JSON
+            settings: JSON.stringify({
               guildName,
               disabledCommands: [],
               modmail: {
                 enabled: false
               }
-            },
+            }),
             // Required fields from the schema
             enabledCategories: '[]',
             setupCompleted: false,
             modmailEnabled: false
           }
         });
+        
+        // Log success for debugging
+        logger.debug(`Guild findOrCreate successful for ${guildId}`);
+        
+        return result;
       } catch (error) {
         logger.error(`Error finding/creating guild ${guildId}: ${error.message}`);
         throw error;
@@ -46,19 +52,22 @@ module.exports = (sequelize) => {
      */
     getSetting(key) {
       try {
-        // Get settings as object
+        // Get settings using getDataValue to get raw value
+        let rawSettings = this.getDataValue('settings');
         let settings = {};
         
-        if (typeof this.settings === 'string') {
+        // Handle different settings formats
+        if (typeof rawSettings === 'string') {
           // Parse string to object if needed
           try {
-            settings = JSON.parse(this.settings);
+            settings = JSON.parse(rawSettings);
           } catch (e) {
             logger.warn(`Invalid settings JSON for guild ${this.guildId}`);
             return undefined;
           }
-        } else if (this.settings) {
-          settings = this.settings;
+        } else if (rawSettings && typeof rawSettings === 'object') {
+          // Use existing object
+          settings = rawSettings;
         }
         
         // If simple key, return directly
@@ -90,24 +99,27 @@ module.exports = (sequelize) => {
      */
     async updateSetting(key, value) {
       try {
-        // Get current settings as object
+        // Get current settings using getDataValue to get raw value
+        let rawSettings = this.getDataValue('settings');
         let currentSettings = {};
         
-        if (typeof this.settings === 'string') {
+        // Handle different settings formats
+        if (typeof rawSettings === 'string') {
           // Parse string to object if needed
           try {
-            currentSettings = JSON.parse(this.settings);
+            currentSettings = JSON.parse(rawSettings);
           } catch (e) {
-            logger.warn(`Invalid settings JSON for guild ${this.guildId}, resetting`);
+            logger.warn(`Invalid settings JSON for guild ${this.guildId}, resetting to empty object`);
           }
-        } else if (this.settings) {
-          // Use existing object
-          currentSettings = { ...this.settings };
+        } else if (rawSettings && typeof rawSettings === 'object') {
+          // Use existing object (make a copy to avoid reference issues)
+          currentSettings = { ...rawSettings };
         }
         
         // If simple key, update directly
         if (!key.includes('.')) {
           currentSettings[key] = value;
+          logger.debug(`Setting direct key ${key} for guild ${this.guildId}`);
         } else {
           // Handle nested keys
           let obj = currentSettings;
@@ -120,7 +132,7 @@ module.exports = (sequelize) => {
             // Check if current level exists and is an object
             if (typeof obj[part] !== 'object' || obj[part] === null || Array.isArray(obj[part])) {
               // If not an object, overwrite with an empty object
-              logger.debug(`Converting ${part} from ${typeof obj[part]} to object`);
+              logger.debug(`Converting ${part} from ${typeof obj[part]} to object for guild ${this.guildId}`);
               obj[part] = {};
             }
             
@@ -128,14 +140,21 @@ module.exports = (sequelize) => {
           }
           
           obj[lastPart] = value;
+          logger.debug(`Setting nested key ${key} for guild ${this.guildId}`);
         }
         
-        // Update settings and save
-        this.settings = currentSettings;
+        // Update settings based on original format
+        if (typeof rawSettings === 'string') {
+          this.setDataValue('settings', JSON.stringify(currentSettings));
+        } else {
+          this.setDataValue('settings', currentSettings);
+        }
+        
+        // Save the changes
         await this.save();
         
         // Log success
-        logger.debug(`Updated setting ${key} for guild ${this.guildId}`);
+        logger.debug(`Successfully updated setting ${key} for guild ${this.guildId}`);
         
         return this;
       } catch (error) {
@@ -151,30 +170,38 @@ module.exports = (sequelize) => {
      */
     async updateSettings(newSettings) {
       try {
-        // Get current settings as object
+        // Get current settings using getDataValue to get raw value
+        let rawSettings = this.getDataValue('settings');
         let currentSettings = {};
         
-        if (typeof this.settings === 'string') {
+        // Handle different settings formats
+        if (typeof rawSettings === 'string') {
           // Parse string to object if needed
           try {
-            currentSettings = JSON.parse(this.settings);
+            currentSettings = JSON.parse(rawSettings);
           } catch (e) {
-            logger.warn(`Invalid settings JSON for guild ${this.guildId}, resetting`);
+            logger.warn(`Invalid settings JSON for guild ${this.guildId}, resetting to empty object`);
           }
-        } else if (this.settings) {
-          // Use existing object
-          currentSettings = { ...this.settings };
+        } else if (rawSettings && typeof rawSettings === 'object') {
+          // Use existing object (make a copy to avoid reference issues)
+          currentSettings = { ...rawSettings };
         }
         
         // Deep merge the settings
         const mergedSettings = deepMerge(currentSettings, newSettings);
         
-        // Update and save
-        this.settings = mergedSettings;
+        // Update settings based on original format
+        if (typeof rawSettings === 'string') {
+          this.setDataValue('settings', JSON.stringify(mergedSettings));
+        } else {
+          this.setDataValue('settings', mergedSettings);
+        }
+        
+        // Save the changes
         await this.save();
         
         // Log success
-        logger.debug(`Updated multiple settings for guild ${this.guildId}`);
+        logger.debug(`Successfully updated multiple settings for guild ${this.guildId}`);
         
         return this;
       } catch (error) {
@@ -234,15 +261,60 @@ module.exports = (sequelize) => {
     guildName: {
       type: DataTypes.VIRTUAL,
       get() {
-        // Return guild name from settings or a default
-        const settings = this.getDataValue('settings') || {};
-        return settings.guildName || `Guild ${this.guildId}`;
+        try {
+          // Return guild name from settings or a default
+          let settings = this.getDataValue('settings');
+          
+          // Handle case where settings is a JSON string
+          if (typeof settings === 'string') {
+            try {
+              settings = JSON.parse(settings);
+            } catch (e) {
+              return `Guild ${this.guildId}`;
+            }
+          }
+          
+          // If settings is null/undefined or not an object
+          if (!settings || typeof settings !== 'object') {
+            return `Guild ${this.guildId}`;
+          }
+          
+          return settings.guildName || `Guild ${this.guildId}`;
+        } catch (error) {
+          logger.warn(`Error getting guildName virtual field: ${error.message}`);
+          return `Guild ${this.guildId}`;
+        }
       },
       set(value) {
-        // Store guild name in settings
-        const currentSettings = this.getDataValue('settings') || {};
-        const newSettings = { ...currentSettings, guildName: value };
-        this.setDataValue('settings', newSettings);
+        try {
+          // Store guild name in settings
+          let currentSettings = this.getDataValue('settings');
+          
+          // Handle case where settings is a JSON string
+          if (typeof currentSettings === 'string') {
+            try {
+              currentSettings = JSON.parse(currentSettings);
+            } catch (e) {
+              currentSettings = {};
+            }
+          }
+          
+          // If currentSettings is null/undefined or not an object
+          if (!currentSettings || typeof currentSettings !== 'object') {
+            currentSettings = {};
+          }
+          
+          const newSettings = { ...currentSettings, guildName: value };
+          
+          // Store as JSON string if it's not already an object
+          if (this.getDataValue('settings') && typeof this.getDataValue('settings') === 'string') {
+            this.setDataValue('settings', JSON.stringify(newSettings));
+          } else {
+            this.setDataValue('settings', newSettings);
+          }
+        } catch (error) {
+          logger.warn(`Error setting guildName virtual field: ${error.message}`);
+        }
       }
     },
     loggingChannelId: {
