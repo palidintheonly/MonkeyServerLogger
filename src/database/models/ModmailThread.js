@@ -34,13 +34,22 @@ module.exports = (sequelize) => {
      */
     static async findActiveThread(userId, guildId) {
       try {
-        return await ModmailThread.findOne({
+        logger.debug(`Looking for active thread for user ${userId} in guild ${guildId}`);
+        const thread = await ModmailThread.findOne({
           where: {
             userId,
             guildId,
             open: true
           }
         });
+        
+        if (thread) {
+          logger.debug(`Found active thread: ${thread.id}`);
+        } else {
+          logger.debug(`No active thread found for user ${userId} in guild ${guildId}`);
+        }
+        
+        return thread;
       } catch (error) {
         logger.error(`Error finding active thread for user ${userId} in guild ${guildId}: ${error.message}`);
         throw error;

@@ -5,7 +5,7 @@
 const { Events, ChannelType } = require('discord.js');
 const { logger } = require('../utils/logger');
 const { createInfoEmbed } = require('../utils/embedBuilder');
-const { createModmailThread } = require('../utils/modmail');
+const { createModmailThread, findThreadWithFallback } = require('../utils/modmail');
 
 module.exports = {
   name: Events.MessageCreate,

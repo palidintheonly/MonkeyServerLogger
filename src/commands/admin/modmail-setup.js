@@ -51,11 +51,14 @@ module.exports = {
     
     const subcommand = interaction.options.getSubcommand();
     
-    // Get or create guild settings using our custom method
-    const [guildSettings] = await client.db.Guild.findOrCreate(
-      interaction.guild.id,
-      interaction.guild.name
-    );
+    // Get or create guild settings using proper format
+    const [guildSettings] = await client.db.Guild.findOrCreate({
+      where: { guildId: interaction.guild.id },
+      defaults: { 
+        guildId: interaction.guild.id,
+        guildName: interaction.guild.name 
+      }
+    });
     
     try {
       switch (subcommand) {

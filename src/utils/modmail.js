@@ -10,6 +10,85 @@ const moment = require('moment');
 const { v4: uuidv4 } = require('uuid');
 
 /**
+ * Helper function to find a thread with fallback mechanisms
+ * @param {Client} client - Discord client
+ * @param {string} threadId - Thread/channel ID to look for
+ * @param {string} [userId] - Optional user ID for fallback lookup
+ * @param {string} [guildId] - Optional guild ID for fallback lookup
+ * @returns {Promise<ModmailThread|null>} - Found thread or null
+ */
+async function findThreadWithFallback(client, threadId, userId = null, guildId = null) {
+  logger.debug(`Looking for thread with ID ${threadId}`);
+  
+  // Primary lookup by ID
+  let thread = await client.db.ModmailThread.findOne({
+    where: { id: threadId }
+  });
+  
+  if (thread) {
+    logger.debug(`Found thread directly: ${thread.id}`);
+    return thread;
+  }
+  
+  // If we have a user ID and guild ID, try to find active threads for that combination
+  if (userId && guildId) {
+    logger.debug(`Thread not found by ID, trying userId=${userId} and guildId=${guildId}`);
+    
+    thread = await client.db.ModmailThread.findOne({
+      where: {
+        userId: userId,
+        guildId: guildId,
+        open: true
+      }
+    });
+    
+    if (thread) {
+      logger.debug(`Found thread by user/guild combo: ${thread.id}`);
+      return thread;
+    }
+  }
+  
+  // If we have a userId, try finding any active thread for that user
+  if (userId) {
+    logger.debug(`Thread not found by ID or combo, trying any active thread for userId=${userId}`);
+    
+    const threads = await client.db.ModmailThread.findAll({
+      where: {
+        userId: userId,
+        open: true
+      },
+      order: [['lastMessageAt', 'DESC']] // Get most recent first
+    });
+    
+    if (threads.length > 0) {
+      logger.debug(`Found ${threads.length} threads for user, using most recent: ${threads[0].id}`);
+      return threads[0];
+    }
+  }
+  
+  // If we have a guildId, try finding any active thread for that guild
+  if (guildId) {
+    logger.debug(`No threads found for user, trying any active thread for guildId=${guildId}`);
+    
+    const threads = await client.db.ModmailThread.findAll({
+      where: {
+        guildId: guildId,
+        open: true
+      },
+      order: [['lastMessageAt', 'DESC']] // Get most recent first
+    });
+    
+    if (threads.length > 0) {
+      logger.debug(`Found ${threads.length} threads for guild, using most recent: ${threads[0].id}`);
+      return threads[0];
+    }
+  }
+  
+  logger.debug(`No thread found with any method`);
+  return null;
+}
+
+/**
  * Create a new modmail thread
  * @param {Message} message - Original DM or trigger message
  * @param {Client} client - Discord client
@@ -18,19 +97,24 @@ const { v4: uuidv4 } = require('uuid');
  * @param {Array} [attachments] - Optional attachments
  */
 async function createModmailThread(message, client, guild, content = null, attachments = []) {
+  logger.info(`Creating modmail thread for user ${message.author.tag} (${message.author.id}) in guild ${guild.name} (${guild.id})`);
+  
   // Get modmail category from guild settings
   const guildSettings = await client.db.Guild.findOne({
     where: { guildId: guild.id }
   });
   
   if (!guildSettings) {
+    logger.error(`Guild settings not found for guild ${guild.id}`);
     throw new Error('Guild settings not found');
   }
   
   const modmailSettings = guildSettings.getSetting('modmail') || {};
+  logger.debug(`Modmail settings for guild ${guild.id}: ${JSON.stringify(modmailSettings)}`);
   const categoryId = modmailSettings.categoryId;
   
   if (!categoryId) {
+    logger.error(`Modmail category not configured for guild ${guild.id}`);
     throw new Error('Modmail category not configured');
   }
   
@@ -173,6 +257,17 @@ async function createModmailThread(message, client, guild, content = null, attac
     }
   }
   
+  // Verify the thread was correctly created in the database
+  const verifyThread = await client.db.ModmailThread.findOne({
+    where: { id: channel.id }
+  });
+  
+  if (!verifyThread) {
+    logger.error(`Thread was not saved properly in the database! Channel ID: ${channel.id}, User ID: ${user.id}`);
+  } else {
+    logger.info(`Thread successfully created and saved in database. Channel ID: ${channel.id}, Thread ID: ${thread.id}, User ID: ${user.id}`);
+  }
+  
   return thread;
 }
 
@@ -185,12 +280,11 @@ async function createModmailThread(message, client, guild, content = null, attac
  */
 async function createModmailTranscript(channel, client, sendToUser = false) {
   try {
-    // Find the thread info from the database
-    const thread = await client.db.ModmailThread.findOne({
-      where: { id: channel.id }
-    });
+    // Find the thread info from the database using our robust helper function
+    const thread = await findThreadWithFallback(client, channel.id);
     
     if (!thread) {
+      logger.warn(`Thread for channel ${channel.id} not found in database for transcript generation`);
       throw new Error('Thread not found in database');
     }
     
@@ -273,5 +367,6 @@ async function createModmailTranscript(channel, client, sendToUser = false) {
 
 module.exports = {
   createModmailThread,
-  createModmailTranscript
+  createModmailTranscript,
+  findThreadWithFallback
 };

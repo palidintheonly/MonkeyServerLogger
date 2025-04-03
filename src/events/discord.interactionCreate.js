@@ -5,7 +5,7 @@ const { Events, Collection, InteractionType } = require('discord.js');
 const { logger, interactionLogger } = require('../utils/logger');
 const { createErrorEmbed, createSuccessEmbed } = require('../utils/embedBuilder');
 const { bot: botConfig } = require('../config');
-const { createModmailThread, createModmailTranscript } = require('../utils/modmail');
+const { createModmailThread, createModmailTranscript, findThreadWithFallback } = require('../utils/modmail');
 
 module.exports = {
   name: Events.InteractionCreate,
@@ -317,6 +317,8 @@ async function handleModmailThreadSelect(interaction, client) {
     }
     
     // Check for existing thread with this guild
+    logger.debug(`Looking for threads for user ${interaction.user.id} in guild ${selectedGuildId}`);
+    
     const existingThreads = await client.db.ModmailThread.findAll({
       where: {
         userId: interaction.user.id,
@@ -325,8 +327,16 @@ async function handleModmailThreadSelect(interaction, client) {
       }
     });
     
+    logger.debug(`Found ${existingThreads.length} active thread(s) for user ${interaction.user.id} in guild ${selectedGuildId}`);
+    
     // Use the first active thread if there are any
     const existingThread = existingThreads.length > 0 ? existingThreads[0] : null;
+    
+    if (existingThread) {
+      logger.debug(`Selected thread: id=${existingThread.id}, userId=${existingThread.userId}, guildId=${existingThread.guildId}, open=${existingThread.open}`);
+    } else {
+      logger.debug(`No existing thread found, will create a new one`);
+    }
     
     if (!existingThread) {
       // Create a new thread if one doesn't exist
@@ -531,14 +541,18 @@ async function handleModmailClose(interaction, client) {
     // Get the channel/thread
     const channel = interaction.channel;
     
-    // Get the thread from the database
-    const thread = await client.db.ModmailThread.findOne({
-      where: { id: channel.id }
-    });
+    // Get the thread from the database using our robust helper function
+    const thread = await findThreadWithFallback(
+      client, 
+      channel.id, 
+      null, 
+      interaction.guild?.id
+    );
     
     if (!thread) {
+      logger.warn(`Thread with channel ID ${channel.id} not found in the database for closing`);
       return interaction.editReply({
-        content: 'This doesn\'t appear to be a modmail thread, or the thread data is missing.'
+        content: 'This doesn\'t appear to be a modmail thread, or the thread data is missing from the database.'
       });
     }
     
@@ -604,10 +618,29 @@ async function handleModmailReply(interaction, client) {
     // Get the thread ID from the channel
     const threadId = interaction.channel.id;
     
-    // Create the modal for the reply
+    // Add debug logging to track the thread ID
+    logger.debug(`Modmail reply requested in channel ${threadId} by ${interaction.user.tag} (${interaction.user.id})`);
+    
+    // Verify the thread exists in the database before proceeding
+    const thread = await findThreadWithFallback(
+      client,
+      threadId,
+      null, // We don't have user ID at this point
+      interaction.guild?.id
+    );
+    
+    if (!thread) {
+      logger.warn(`Staff tried to reply to a thread that doesn't exist in database. Channel ID: ${threadId}, Guild ID: ${interaction.guild?.id}`);
+      return interaction.reply({
+        content: 'This modmail thread could not be found in the database. It may have been deleted or there was an error during creation.',
+        ephemeral: true
+      });
+    }
+    
+    // Create the modal for the reply with valid database ID 
     await interaction.showModal({
       title: 'Reply to Modmail',
-      custom_id: `modmail_reply_${threadId}`,
+      custom_id: `modmail_reply_${thread.id}`, // Use the validated thread.id
       components: [
         {
           type: 1, // ACTION_ROW
@@ -626,6 +659,8 @@ async function handleModmailReply(interaction, client) {
         }
       ]
     });
+    
+    logger.debug(`Modmail reply modal shown for thread ID ${thread.id} in channel ${threadId}`);
   } catch (error) {
     logger.error(`Error showing modmail reply modal: ${error.message}`, { error });
     
@@ -651,14 +686,18 @@ async function handleModmailReplySubmit(interaction, client) {
     // Get the reply content
     const replyContent = interaction.fields.getTextInputValue('modmail_reply_content');
     
-    // Get the thread from the database
-    const thread = await client.db.ModmailThread.findOne({
-      where: { id: threadId }
-    });
+    // Get the thread from the database using our robust helper function
+    const thread = await findThreadWithFallback(
+      client,
+      threadId,
+      interaction.user.id,
+      interaction.guild?.id
+    );
     
     if (!thread) {
+      logger.warn(`Thread with ID ${threadId} not found in the database for modal submission with any method`);
       return interaction.editReply({
-        content: 'This thread could not be found in the database.'
+        content: 'This thread could not be found in the database. It may have been deleted or there was an error during creation.'
       });
     }
     
@@ -743,14 +782,17 @@ async function handleModmailTranscript(interaction, client) {
     // Get the channel/thread
     const channel = interaction.channel;
     
-    // Get the thread from the database
-    const thread = await client.db.ModmailThread.findOne({
-      where: { id: channel.id }
-    });
+    // Get the thread from the database with our robust helper function
+    const thread = await findThreadWithFallback(
+      client, 
+      channel.id, 
+      null, 
+      interaction.guild?.id
+    );
     
     if (!thread) {
       return interaction.editReply({
-        content: 'This doesn\'t appear to be a modmail thread, or the thread data is missing.'
+        content: 'This doesn\'t appear to be a modmail thread, or the thread data is missing from the database.'
       });
     }
     
