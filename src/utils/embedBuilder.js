@@ -1,8 +1,10 @@
 /**
  * Embed Builder Utility
  * Functions to create consistent, professional embeds for Discord messages
+ * MonkeyBytes - The Royal Court
  */
 const { EmbedBuilder } = require('discord.js');
+const { bot } = require('../config');
 
 /**
  * Create a generic embed with consistent styling
@@ -41,7 +43,16 @@ function createEmbed({
   if (image) embed.setImage(image);
   if (fields.length > 0) embed.addFields(...fields);
   if (author) embed.setAuthor(author);
-  if (footer) embed.setFooter(footer);
+  
+  // Set footer with branding if not explicitly provided
+  if (footer) {
+    embed.setFooter(footer);
+  } else {
+    embed.setFooter({ 
+      text: `${bot.company} - ${bot.slogan} | v${bot.version}`
+    });
+  }
+  
   if (timestamp) embed.setTimestamp();
   
   return embed;

@@ -2,7 +2,7 @@
  * Configuration settings for the MonkeyBytes Modmail Bot
  */
 require('dotenv').config();
-const { version } = require('../version');
+const { version } = require('./version');
 
 module.exports = {
   /**

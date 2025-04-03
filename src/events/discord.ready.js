@@ -37,7 +37,8 @@ function setupRotatingStatus(client) {
     { text: 'DM me for modmail support', type: ActivityType.Playing },
     { text: '/help for commands', type: ActivityType.Listening },
     { text: 'Contact server staff via DM', type: ActivityType.Watching },
-    { text: 'modmail.support/guide', type: ActivityType.Playing }
+    { text: `${bot.company} - ${bot.slogan}`, type: ActivityType.Playing },
+    { text: `Version ${bot.version}`, type: ActivityType.Competing }
   ];
   
   let currentIndex = 0;
